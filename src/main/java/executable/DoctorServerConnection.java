@@ -24,26 +24,20 @@ public class DoctorServerConnection {
         if(ip.equalsIgnoreCase("localhost")){
             return true;
         } else {
-            // Divide the ip by the .
             String[] octets = ip.split("\\.");
-            // There need to be 4 octets
             if (octets.length != 4) {
                 return false;
             }
-            // check the octect
             for (String octet : octets) {
                 try {
                     int value = Integer.parseInt(octet);
-                    // Check if it is between the correct numbers
                     if (value < 0 || value > 255) {
                         return false;
                     }
                 } catch (NumberFormatException e) {
-                    // if can´t be parsed is oncorrect
                     return false;
                 }
             }
-            // if everything seems fine the ip is correct
             return true;
         }
     }
@@ -52,27 +46,21 @@ public class DoctorServerConnection {
         return dni.matches("\\d{8}[A-Z]");
     }
 
-
     private static boolean isValidEmail(String email) {
         if (email == null) return false;
-        // Simple RFC-like regex, enough for validation step
         String emailRegex = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$";
         return Pattern.matches(emailRegex, email);
     }
 
     private static boolean isValidPhone(String phone) {
         if (phone == null) return false;
-        // Spanish-style 9 digits or generic 7-15 digits;
         return phone.matches("\\d{7,15}");
     }
 
     public static void main(String[] args) {
-        // IP address of the server and port
-        String DNI = "";
-        String respond;
         Scanner scanner = new Scanner(System.in);
         String serverAddress = null;
-        int port = 0;
+        final int port = 9000; // puerto fijo solicitado
         String MACAddress = null;
         Socket socket = null;
         DataOutputStream outputStream = null;
@@ -81,7 +69,7 @@ public class DoctorServerConnection {
         BitalinoManager bitalinoManager = new BitalinoManager();
 
         while (true) {
-            System.out.println("Enter the IP address: ");
+            System.out.println("Enter the IP address (or 'localhost'): ");
             serverAddress = scanner.nextLine();
             if (isValidIPAddress(serverAddress)) {
                 break;
@@ -89,21 +77,8 @@ public class DoctorServerConnection {
                 System.out.println("Invalid IP address format. Please try again.");
             }
         }
-        while (true) {
-            System.out.println("Enter the port number (1024-65535): ");
-            try {
-                port = Integer.parseInt(scanner.nextLine());
-                if (port >= 1024 && port <= 65535) {
-                    break;
-                } else {
-                    System.out.println("Port number must be between 1024 and 65535. Please try again.");
-                }
-            } catch (NumberFormatException e) {
-                System.out.println("Invalid port number. Please enter a numeric value.");
-            }
-        }
 
-        //MAC address
+        // MAC address
         while (true) {
             System.out.print("Enter MAC address (XX:XX:XX:XX:XX:XX): ");
             MACAddress = scanner.nextLine();
@@ -115,13 +90,13 @@ public class DoctorServerConnection {
         }
 
         try {
-            // Connect to server
             socket = new Socket(serverAddress, port);
             outputStream = new DataOutputStream(socket.getOutputStream());
             inputStream = new DataInputStream(socket.getInputStream());
             System.out.println("Connected to " + serverAddress + " at port " + port);
 
-            outputStream.writeUTF("Patient");
+            // Indicar al servidor que es un Doctor
+            outputStream.writeUTF("Doctor");
             outputStream.flush();
 
             boolean loggedIn = false;
@@ -145,13 +120,10 @@ public class DoctorServerConnection {
                 }
             }
 
-            //TODO DOCTOR ACCESSS THEIR PATIETNS LIST AND MEDICAL RECORDS
-
-            // Configure MAC address of the bitalino
+            // Configurar BITalino
             bitalino = new BITalino();
             int samplingRate = 1000;
 
-            // After login: only two options: Start recording (press ENTER) or Quit (type Q)
             boolean done = false;
             while (!done) {
                 System.out.println("\nReady to record. Press ENTER to start recording or type Q + ENTER to quit.");
@@ -161,15 +133,12 @@ public class DoctorServerConnection {
                     done = true;
                     break;
                 }
-                // User pressed ENTER (or something else not Q) -> start recording
-                // Tell server we are about to start (optional)
                 outputStream.writeUTF("START");
                 outputStream.flush();
 
-                // open bitalino and start
                 try {
                     bitalino.open(MACAddress, samplingRate);
-                    int[] channelsToAcquire = new int[]{1, 2}; // EMG, ECG
+                    int[] channelsToAcquire = new int[]{1, 2};
                     bitalino.start(channelsToAcquire);
                     System.out.println("Recording started. Press ENTER to stop recording.");
                 } catch (Throwable ex) {
@@ -177,15 +146,13 @@ public class DoctorServerConnection {
                     outputStream.writeUTF("ERROR");
                     outputStream.writeUTF("BITalino open/start failed: " + ex.getMessage());
                     outputStream.flush();
-                    // attempt to close and continue
                     try { bitalino.close(); } catch (Throwable ignored) {}
                     continue;
                 }
 
-                // Recording loop: read until user presses ENTER again
                 Thread stopper = new Thread(() -> {
                     try {
-                        System.in.read(); // waits for any Enter press
+                        System.in.read();
                     } catch (IOException ignored) {
                     }
                 });
@@ -197,66 +164,56 @@ public class DoctorServerConnection {
                     while (stopper.isAlive()) {
                         Frame[] frames = bitalino.read(blockSize);
                         for (Frame f : frames) {
-                            // Send a DATA command followed by ints
                             outputStream.writeUTF("DATA");
                             outputStream.writeInt((int) blockNumber);
                             outputStream.writeInt(f.seq);
-                            outputStream.writeInt(f.analog[1]); // ECG
-                            outputStream.writeInt(f.analog[2]); // EDA
+                            outputStream.writeInt(f.analog[1]);
+                            outputStream.writeInt(f.analog[2]);
                             outputStream.flush();
                             blockNumber++;
                         }
                     }
                 } catch (Throwable ex) {
                     System.err.println("Error while recording/streaming frames: " + ex.getMessage());
-                    // send an ERROR marker to server
                     try {
                         outputStream.writeUTF("ERROR");
                         outputStream.writeUTF("Exception during recording: " + ex.getMessage());
                         outputStream.flush();
                     } catch (IOException ignored) {}
                 } finally {
-                    // Stop bitalino
                     try {
                         bitalino.stop();
                         bitalino.close();
                     } catch (Throwable ignored) {}
                 }
 
-                // Send END marker
                 outputStream.writeUTF("END");
                 outputStream.flush();
 
-                // Server should ACK and/or save data.
-                // Wait for ACK (if server sends one)
                 try {
-                    String serverResponse = inputStream.readUTF(); // could be "ACK" or message
+                    String serverResponse = inputStream.readUTF();
                     System.out.println("Server: " + serverResponse);
                 } catch (IOException e) {
                     System.out.println("No ACK received (server may have disconnected).");
                 }
 
-                // After recording stopped: select symptoms (only now)
                 sendSymptomsInteractive(scanner, outputStream, inputStream);
 
-                // After symptoms, ask user if they want to record again or quit
                 System.out.println("Do you want to record again? (yes/no)");
                 String again = scanner.nextLine().trim().toLowerCase();
                 if (!again.equals("yes") && !again.equals("y")) {
                     done = true;
                 }
-            } // end while done
+            }
 
-
-        }catch (Throwable e) {
-            Logger.getLogger(Patient.class.getName()).log(Level.SEVERE, "Error in the client", e);
+        } catch (Throwable e) {
+            Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error in the client", e);
         } finally {
-            releaseResources(bitalino, socket, outputStream, scanner,inputStream);
+            releaseResources(bitalino, socket, outputStream, scanner, inputStream);
         }
 
     }
 
-    // --- Signup implementation (client-side validation + sending) ---
     private static void performSignUp(Scanner scanner, DataOutputStream out, DataInputStream in) {
         try {
             System.out.println("---- SIGN UP ----");
@@ -297,7 +254,6 @@ public class DoctorServerConnection {
             while (true) {
                 System.out.print("Birthday (yyyy-MM-dd): ");
                 birthday = scanner.nextLine().trim();
-                // basic format check
                 if (birthday.matches("\\d{4}-\\d{2}-\\d{2}")) break;
                 System.out.println("Invalid format. Use yyyy-MM-dd.");
             }
@@ -360,7 +316,6 @@ public class DoctorServerConnection {
                 System.out.println("Invalid phone. Enter 7-15 digits.");
             }
 
-            // Send SIGNUP
             out.writeUTF("SIGNUP");
             out.writeUTF(username);
             out.writeUTF(password);
@@ -375,7 +330,6 @@ public class DoctorServerConnection {
             out.writeUTF(emergencyContact);
             out.flush();
 
-            // Server response
             String response = in.readUTF();
             if ("ACK".equals(response)) {
                 String msg = in.readUTF();
@@ -392,8 +346,6 @@ public class DoctorServerConnection {
         }
     }
 
-    // --- Login implementation ---
-    // returns username if success, null otherwise
     private static String performLogin(Scanner scanner, DataOutputStream out, DataInputStream in) {
         try {
             System.out.println("---- LOG IN ----");
@@ -407,7 +359,7 @@ public class DoctorServerConnection {
             out.writeUTF(password);
             out.flush();
 
-            String response = in.readUTF(); // expected "LOGIN_RESULT"
+            String response = in.readUTF();
             if ("LOGIN_RESULT".equals(response)) {
                 boolean ok = in.readBoolean();
                 String msg = in.readUTF();
@@ -426,7 +378,6 @@ public class DoctorServerConnection {
     private static void sendSymptomsInteractive(Scanner scanner, DataOutputStream out, DataInputStream in) {
         try {
             System.out.println("\nSelect symptoms from the list (IDs). Example input: 1,3,5");
-            // For a better UI you'd fetch symptom list from server. Here we show an example.
             System.out.println("1 - Pain\n2 - Difficulty holding objects\n3 - Trouble breathing\n4 - Trouble swallowing\n5 - Trouble sleeping\n6 - Fatigue");
             System.out.print("Enter symptom IDs separated by commas (or leave blank for none): ");
             String line = scanner.nextLine().trim();
@@ -439,14 +390,12 @@ public class DoctorServerConnection {
                     int id = Integer.parseInt(t.trim());
                     out.writeInt(id);
                 } catch (NumberFormatException nfe) {
-                    out.writeInt(-1); // placeholder invalid id
+                    out.writeInt(-1);
                 }
             }
-            // send timestamp
             out.writeUTF(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
             out.flush();
 
-            // wait for ack
             String response = in.readUTF();
             if ("ACK".equals(response)) {
                 String msg = in.readUTF();
@@ -459,7 +408,7 @@ public class DoctorServerConnection {
         }
     }
 
-    private static void releaseResources(BITalino bitalino, Socket socket, DataOutputStream outputStream, Scanner scanner,DataInputStream inputStream) {
+    private static void releaseResources(BITalino bitalino, Socket socket, DataOutputStream outputStream, Scanner scanner, DataInputStream inputStream) {
         if (scanner != null) {
             scanner.close();
         }
@@ -468,7 +417,7 @@ public class DoctorServerConnection {
                 bitalino.close();
             }
         } catch (BITalinoException e) {
-            Logger.getLogger(Patient.class.getName()).log(Level.SEVERE, "Error closing Bitalino", e);
+            Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing Bitalino", e);
         }
 
         try {
@@ -476,21 +425,21 @@ public class DoctorServerConnection {
                 outputStream.close();
             }
         } catch (IOException e) {
-            Logger.getLogger(Patient.class.getName()).log(Level.SEVERE, "Error closing OutputStream", e);
+            Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing OutputStream", e);
         }
         try {
             if (inputStream != null) {
                 inputStream.close();
             }
         } catch (IOException e) {
-            Logger.getLogger(Patient.class.getName()).log(Level.SEVERE, "Error closing InputStream", e);
+            Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing InputStream", e);
         }
         try {
             if (socket != null) {
                 socket.close();
             }
         } catch (IOException e) {
-            Logger.getLogger(Patient.class.getName()).log(Level.SEVERE, "Error closing socket", e);
+            Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing socket", e);
         }
     }
 
