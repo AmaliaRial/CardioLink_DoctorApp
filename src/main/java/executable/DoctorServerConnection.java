@@ -145,7 +145,7 @@ public class DoctorServerConnection {
                 }
             }
 
-            //TODO PATIENT ACCESSS THEIR COMPLETED MEDICAL RECORDS
+            //TODO DOCTOR ACCESSS THEIR PATIETNS LIST AND MEDICAL RECORDS
 
             // Configure MAC address of the bitalino
             bitalino = new BITalino();
