@@ -8,5 +8,7 @@ import java.net.Socket;
 
 
 public class DoctorServerConnection {
+    public static void main(String[] args) {
 
+    }
 }
