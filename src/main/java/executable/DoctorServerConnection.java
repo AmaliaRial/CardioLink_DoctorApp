@@ -4,7 +4,6 @@ import bitalino.BITalino;
 import bitalino.BITalinoException;
 import bitalino.BitalinoManager;
 import bitalino.Frame;
-import pojos.Patient;
 import common.enums.Sex;
 
 import java.io.DataInputStream;
@@ -20,20 +19,17 @@ import java.util.regex.Pattern;
 
 public class DoctorServerConnection {
 
+    //
     private static boolean isValidIPAddress(String ip) {
-        if(ip.equalsIgnoreCase("localhost")){
+        if (ip.equalsIgnoreCase("localhost")) {
             return true;
         } else {
             String[] octets = ip.split("\\.");
-            if (octets.length != 4) {
-                return false;
-            }
+            if (octets.length != 4) return false;
             for (String octet : octets) {
                 try {
                     int value = Integer.parseInt(octet);
-                    if (value < 0 || value > 255) {
-                        return false;
-                    }
+                    if (value < 0 || value > 255) return false;
                 } catch (NumberFormatException e) {
                     return false;
                 }
@@ -42,8 +38,22 @@ public class DoctorServerConnection {
         }
     }
 
-    private static boolean validateDNI(String dni){
-        return dni.matches("\\d{8}[A-Z]");
+    //
+    private static String normalizeDNI(String dni) {
+        if (dni == null) return null;
+        return dni.replaceAll("[\\s-]", "").toUpperCase();
+    }
+
+    private static boolean validateDNI(String dni) {
+        String s = normalizeDNI(dni);
+        if (s == null) return false;
+        if (!s.matches("\\d{8}[A-Z]")) return false;
+        final String LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE";
+        int number;
+        try { number = Integer.parseInt(s.substring(0, 8)); }
+        catch (NumberFormatException e) { return false; }
+        char expected = LETTERS.charAt(number % 23);
+        return s.charAt(8) == expected;
     }
 
     private static boolean isValidEmail(String email) {
@@ -52,41 +62,31 @@ public class DoctorServerConnection {
         return Pattern.matches(emailRegex, email);
     }
 
-    private static boolean isValidPhone(String phone) {
-        if (phone == null) return false;
-        return phone.matches("\\d{7,15}");
-    }
-
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
-        String serverAddress = null;
-        final int port = 9000; // puerto fijo solicitado
-        String MACAddress = null;
+        String serverAddress;
+        final int port = 9000; // puerto fijo
+        String MACAddress;
         Socket socket = null;
         DataOutputStream outputStream = null;
         DataInputStream inputStream = null;
         BITalino bitalino = null;
         BitalinoManager bitalinoManager = new BitalinoManager();
 
+
         while (true) {
             System.out.println("Enter the IP address (or 'localhost'): ");
             serverAddress = scanner.nextLine();
-            if (isValidIPAddress(serverAddress)) {
-                break;
-            } else {
-                System.out.println("Invalid IP address format. Please try again.");
-            }
+            if (isValidIPAddress(serverAddress)) break;
+            System.out.println("Invalid IP address format. Please try again.");
         }
 
-        // MAC address
+
         while (true) {
             System.out.print("Enter MAC address (XX:XX:XX:XX:XX:XX): ");
             MACAddress = scanner.nextLine();
-            if (BitalinoManager.isValidMacAddress(MACAddress)) {
-                break;
-            } else {
-                System.out.println("Invalid MAC address. Please enter a valid MAC address.");
-            }
+            if (BitalinoManager.isValidMacAddress(MACAddress)) break;
+            System.out.println("Invalid MAC address. Please enter a valid MAC address.");
         }
 
         try {
@@ -95,7 +95,7 @@ public class DoctorServerConnection {
             inputStream = new DataInputStream(socket.getInputStream());
             System.out.println("Connected to " + serverAddress + " at port " + port);
 
-            // Indicar al servidor que es un Doctor
+            // Identificar rol
             outputStream.writeUTF("Doctor");
             outputStream.flush();
 
@@ -120,7 +120,7 @@ public class DoctorServerConnection {
                 }
             }
 
-            // Configurar BITalino
+            // BITalino
             bitalino = new BITalino();
             int samplingRate = 1000;
 
@@ -151,10 +151,7 @@ public class DoctorServerConnection {
                 }
 
                 Thread stopper = new Thread(() -> {
-                    try {
-                        System.in.read();
-                    } catch (IOException ignored) {
-                    }
+                    try { System.in.read(); } catch (IOException ignored) {}
                 });
                 stopper.start();
 
@@ -181,10 +178,7 @@ public class DoctorServerConnection {
                         outputStream.flush();
                     } catch (IOException ignored) {}
                 } finally {
-                    try {
-                        bitalino.stop();
-                        bitalino.close();
-                    } catch (Throwable ignored) {}
+                    try { bitalino.stop(); bitalino.close(); } catch (Throwable ignored) {}
                 }
 
                 outputStream.writeUTF("END");
@@ -211,12 +205,12 @@ public class DoctorServerConnection {
         } finally {
             releaseResources(bitalino, socket, outputStream, scanner, inputStream);
         }
-
     }
 
+    // SIGN UP
     private static void performSignUp(Scanner scanner, DataOutputStream out, DataInputStream in) {
         try {
-            System.out.println("---- SIGN UP ----");
+            System.out.println("---- SIGN UP (Doctor) ----");
 
             String username;
             while (true) {
@@ -262,19 +256,16 @@ public class DoctorServerConnection {
             Sex sexVal;
             while (true) {
                 System.out.println("Please, type your sex (MALE/FEMALE):");
-                sex =  scanner.nextLine().trim();
+                sex = scanner.nextLine().trim();
                 if (sex.equalsIgnoreCase("F") || sex.equalsIgnoreCase("Female")) {
                     sexVal = Sex.FEMALE;
                     break;
-                }
-                else if (sex.equalsIgnoreCase("M") || sex.equalsIgnoreCase("Male")){
+                } else if (sex.equalsIgnoreCase("M") || sex.equalsIgnoreCase("Male")) {
                     sexVal = Sex.MALE;
                     break;
-                }
-                else {
+                } else {
                     System.err.println("Invalid Sex, please select as shown");
                 }
-
             }
 
             String email;
@@ -285,37 +276,24 @@ public class DoctorServerConnection {
                 System.out.println("Invalid email. Try again.");
             }
 
-            String phone;
-            while (true) {
-                System.out.print("Phone (digits only): ");
-                phone = scanner.nextLine().trim();
-                if (isValidPhone(phone)) break;
-                System.out.println("Invalid phone. Enter 7-15 digits.");
-            }
+            // Campos que el servidor ESPERA para doctores
+            System.out.print("Specialty: ");
+            String specialty = scanner.nextLine().trim();
+
+            System.out.print("License number: ");
+            String licenseNumber = scanner.nextLine().trim();
 
             String dni;
             while (true) {
-                System.out.print("DNI (8 digits + uppercase letter, e.g. 12345678A): ");
-                dni = scanner.nextLine().trim();
+                System.out.print("DNI (8 digits + uppercase letter, e.g. 12345678Z): ");
+                String raw = scanner.nextLine().trim();
+                dni = normalizeDNI(raw);
                 if (validateDNI(dni)) break;
-                System.out.println("Invalid DNI. Try again.");
+                System.out.println("Invalid DNI. Check the control letter and try again.");
             }
 
-            String insurance;
-            while (true) {
-                System.out.print("Insurance number: ");
-                insurance = scanner.nextLine().trim();
-                if (!insurance.isEmpty()) break;
-                System.out.println("Insurance number cannot be empty.");
-            }
-            String emergencyContact;
-            while (true) {
-                System.out.print("Emergency contact phone (digits only): ");
-                emergencyContact = scanner.nextLine().trim();
-                if (isValidPhone(emergencyContact)) break;
-                System.out.println("Invalid phone. Enter 7-15 digits.");
-            }
 
+            // username, password, name, surname, birthday, sex, email, specialty, licenseNumber, dni
             out.writeUTF("SIGNUP");
             out.writeUTF(username);
             out.writeUTF(password);
@@ -324,10 +302,9 @@ public class DoctorServerConnection {
             out.writeUTF(birthday);
             out.writeUTF(String.valueOf(sexVal));
             out.writeUTF(email);
-            out.writeUTF(phone);
+            out.writeUTF(specialty);
+            out.writeUTF(licenseNumber);
             out.writeUTF(dni);
-            out.writeUTF(insurance);
-            out.writeUTF(emergencyContact);
             out.flush();
 
             String response = in.readUTF();
@@ -346,6 +323,7 @@ public class DoctorServerConnection {
         }
     }
 
+    // ===== LOGIN =====
     private static String performLogin(Scanner scanner, DataOutputStream out, DataInputStream in) {
         try {
             System.out.println("---- LOG IN ----");
@@ -375,6 +353,7 @@ public class DoctorServerConnection {
         }
     }
 
+    //SYMPTOMS
     private static void sendSymptomsInteractive(Scanner scanner, DataOutputStream out, DataInputStream in) {
         try {
             System.out.println("\nSelect symptoms from the list (IDs). Example input: 1,3,5");
@@ -408,39 +387,24 @@ public class DoctorServerConnection {
         }
     }
 
+
     private static void releaseResources(BITalino bitalino, Socket socket, DataOutputStream outputStream, Scanner scanner, DataInputStream inputStream) {
-        if (scanner != null) {
-            scanner.close();
-        }
-        try {
-            if (bitalino != null) {
-                bitalino.close();
-            }
-        } catch (BITalinoException e) {
+        if (scanner != null) scanner.close();
+        try { if (bitalino != null) bitalino.close(); }
+        catch (BITalinoException e) {
             Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing Bitalino", e);
         }
-
-        try {
-            if (outputStream != null) {
-                outputStream.close();
-            }
-        } catch (IOException e) {
+        try { if (outputStream != null) outputStream.close(); }
+        catch (IOException e) {
             Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing OutputStream", e);
         }
-        try {
-            if (inputStream != null) {
-                inputStream.close();
-            }
-        } catch (IOException e) {
+        try { if (inputStream != null) inputStream.close(); }
+        catch (IOException e) {
             Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing InputStream", e);
         }
-        try {
-            if (socket != null) {
-                socket.close();
-            }
-        } catch (IOException e) {
+        try { if (socket != null) socket.close(); }
+        catch (IOException e) {
             Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing socket", e);
         }
     }
-
 }
