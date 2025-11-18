@@ -6,17 +6,23 @@ import bitalino.BITalinoException;
 import bitalino.BitalinoManager;
 import bitalino.Frame;
 import common.enums.Sex;
+import pojos.DiagnosisFile;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.net.Socket;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
+import java.util.List;
+import java.time.LocalDate;
+import java.sql.Date;
 
 public class DoctorServerConnection {
 
@@ -413,6 +419,387 @@ public class DoctorServerConnection {
             System.err.println("I/O error sending symptoms: " + e.getMessage());
         }
     }
+
+    private static void setFieldIfExists(Object target, String name, Object value) {
+        if (target == null || name == null) return;
+        Class<?> cls = target.getClass();
+        String setterName = "set" + name;
+
+        try {
+            // cerca setter (case-insensitive)
+            for (Method m : cls.getMethods()) {
+                if (m.getName().equalsIgnoreCase(setterName) && m.getParameterCount() == 1) {
+                    Object arg = convertToParameterType(value, m.getParameterTypes()[0]);
+                    m.invoke(target, arg);
+                    return;
+                }
+            }
+
+            try {
+                java.lang.reflect.Field f = cls.getDeclaredField(name);
+                f.setAccessible(true);
+                Object arg = convertToParameterType(value, f.getType());
+                f.set(target, arg);
+            } catch (NoSuchFieldException ignored) {
+            }
+
+        } catch (Throwable ignored) {
+            }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object convertToParameterType(Object value, Class<?> targetType) {
+        if (value == null) return null;
+        if (targetType.isAssignableFrom(value.getClass())) return value;
+
+        String s = value.toString();
+        try {
+            if (targetType == String.class) return s;
+
+            if (targetType == Integer.class || targetType == int.class) {
+                if (value instanceof Number) return ((Number) value).intValue();
+                return Integer.parseInt(s);
+            }
+            if (targetType == Long.class || targetType == long.class) {
+                if (value instanceof Number) return ((Number) value).longValue();
+                return Long.parseLong(s);
+            }
+            if (targetType == java.time.LocalDateTime.class) {
+                if (value instanceof java.time.LocalDateTime) return value;
+                if (value instanceof java.time.LocalDate) return ((java.time.LocalDate) value).atStartOfDay();
+                return java.time.LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            }
+            if (targetType == java.time.LocalDate.class) {
+                if (value instanceof java.time.LocalDate) return value;
+                if (value instanceof java.time.LocalDateTime) return ((java.time.LocalDateTime) value).toLocalDate();
+                return java.time.LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE);
+            }
+            if (java.util.Date.class.isAssignableFrom(targetType)) {
+                if (value instanceof java.util.Date) return value;
+                if (value instanceof java.time.LocalDateTime) {
+                    return java.util.Date.from(((java.time.LocalDateTime) value).atZone(java.time.ZoneId.systemDefault()).toInstant());
+                }
+                if (value instanceof java.time.LocalDate) {
+                    return java.util.Date.from(((java.time.LocalDate) value).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+                }
+
+                java.time.LocalDateTime ldt = java.time.LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                return java.util.Date.from(ldt.atZone(java.time.ZoneId.systemDefault()).toInstant());
+            }
+
+            if (java.util.List.class.isAssignableFrom(targetType)) {
+                if (value instanceof java.util.List) return value;
+                // se è una stringa separata da virgole, creiamo una ArrayList
+                java.util.List<String> list = new java.util.ArrayList<>();
+                if (s != null && !s.isBlank()) {
+                    for (String part : s.split(",")) {
+                        String t = part.trim();
+                        if (!t.isEmpty()) list.add(t);
+                    }
+                }
+                return list;
+            }
+
+            if (targetType.isEnum()) {
+                @SuppressWarnings({"rawtypes", "unchecked"})
+                Object e = Enum.valueOf((Class<Enum>) targetType, s);
+                return e;
+            }
+
+        } catch (Exception ignored) {
+            // fallback al valore originale
+        }
+        return value;
+    }
+
+
+    // methods
+    public static List<DiagnosisFile> listRecentlyFinishDiagFilesTODO(DataOutputStream out, DataInputStream in, int doctorId) {
+        List<DiagnosisFile> files = new ArrayList<>();
+        try {
+            out.writeUTF("LIST_RECENT_DIAGNOSIS_FILES");
+            out.writeInt(doctorId);
+            out.flush();
+
+            String resp = in.readUTF();
+            if (!"DIAGNOSIS_FILES".equals(resp)) {
+                System.err.println("Unexpected response: " + resp);
+                return files;
+            }
+            int total = in.readInt();
+            DateTimeFormatter fmt = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+            for (int i = 0; i < total; i++) {
+                int id = in.readInt();
+                String symptomsStr = in.readUTF();
+                String diagnosis = in.readUTF();
+                String medication = in.readUTF();
+                String dateStr = in.readUTF();
+                int patientId = in.readInt();
+
+                LocalDateTime date = null;
+                try {
+                    if (dateStr != null && !dateStr.isEmpty()) {
+                        date = LocalDateTime.parse(dateStr, fmt);
+                    }
+                } catch (Exception ex) {
+                    date = null;
+                }
+
+                DiagnosisFile df = new DiagnosisFile();
+
+                ArrayList<String> symptoms = new ArrayList<>();
+                if (symptomsStr != null && !symptomsStr.isBlank()) {
+                    for (String s : symptomsStr.split(",")) {
+                        String t = s.trim();
+                        if (!t.isEmpty()) symptoms.add(t);
+                    }
+                }
+
+                setFieldIfExists(df, "id", id);
+                setFieldIfExists(df, "date", date); // se POJO ha LocalDate oppure LocalDateTime o String, verrà convertito
+                setFieldIfExists(df, "patientId", patientId);
+                setFieldIfExists(df, "symptoms", symptoms);
+                setFieldIfExists(df, "diagnosis", diagnosis);
+                setFieldIfExists(df, "medication", medication);
+
+
+                files.add(df);
+            }
+
+            files.sort(java.util.Comparator.comparing(DiagnosisFile::getDate,
+                            java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
+                    .reversed());
+
+        } catch (IOException e) {
+            System.err.println("I/O error while requesting recent diagnosis files: " + e.getMessage());
+        }
+        return files;
+    }
+
+
+    private static String[] sendUpdatedDiagnosisFile(DataOutputStream out, DataInputStream in, int doctorId, DiagnosisFile file) {
+        if (file == null) return new String[0];
+        try {
+            out.writeUTF("SEND_UPDATED_DIAGNOSIS_FILE");
+            out.writeInt(doctorId);
+            Integer id = null;
+            try { id = file.getId(); } catch (Throwable ignored) {}
+            out.writeInt(id == null ? -1 : id);
+
+            String symptomsStr = "";
+            try {
+                List<String> symptoms = file.getSymptoms();
+                if (symptoms != null && !symptoms.isEmpty()) {
+                    StringBuilder sb = new StringBuilder();
+                    for (String s : symptoms) {
+                        if (s == null) continue;
+                        if (sb.length() > 0) sb.append(",");
+                        sb.append(s.trim());
+                    }
+                    symptomsStr = sb.toString();
+                }
+            } catch (Throwable ignored) {}
+            out.writeUTF(symptomsStr);
+
+            String diagnosis = "";
+            try { diagnosis = file.getDiagnosis(); } catch (Throwable ignored) {}
+            out.writeUTF(diagnosis);
+
+            String medication = "";
+            try { medication = file.getMedication() == null ? "" : file.getMedication(); } catch (Throwable ignored) {}
+            out.writeUTF(medication);
+
+            String dateStr = "";
+            try {
+                Object dateObj = null;
+                try { dateObj = file.getDate(); } catch (Throwable ignored) {}
+                if (dateObj != null) {
+                    if (dateObj instanceof LocalDateTime) {
+                        dateStr = ((LocalDateTime) dateObj).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                    } else if (dateObj instanceof LocalDate) {
+                        dateStr = ((LocalDate) dateObj).atStartOfDay().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                    } else if (dateObj instanceof Date) {
+                        java.time.Instant inst = ((Date) dateObj).toInstant();
+                        dateStr = LocalDateTime.ofInstant(inst, java.time.ZoneId.systemDefault()).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                    } else {
+                        dateStr = dateObj.toString();
+                    }
+                }
+            } catch (Throwable ignored) {}
+            out.writeUTF(dateStr);
+
+            Integer patientId = null;
+            try { patientId = file.getPatientId(); } catch (Throwable ignored) {}
+            out.writeInt(patientId == null ? -1 : patientId);
+
+            out.flush();
+
+            String resp = in.readUTF();
+            if ("ACK".equals(resp)) {
+                String msg = in.readUTF();
+                return new String[] {"ACK", msg};
+            } else if ("ERROR".equals(resp)) {
+                String msg = in.readUTF();
+                return new String[] {"ERROR", msg};
+            } else {
+                return new String[] {"UNKNOWN", resp};
+            }
+
+        } catch (IOException e) {
+            return new String[] {"ERROR", e.getMessage()};
+        }
+    }
+
+
+    private static int[] getFragmentOfRecording(DataOutputStream out, DataInputStream in, DiagnosisFile df, int fragmentIndex, int length) {
+        if (df == null) {
+            System.err.println("DiagnosisFile is null");
+            return new int[0];
+        }
+        Integer diagnosisId = null;
+        try { diagnosisId = df.getId(); } catch (Throwable ignored) {}
+        if (diagnosisId == null || diagnosisId < 0) {
+            System.err.println("Invalid diagnosis id");
+            return new int[0];
+        }
+
+        if (fragmentIndex < 0 || length <= 0) {
+            System.err.println("Invalid fragmentIndex or length");
+            return new int[0];
+        }
+
+        try {
+
+            out.writeUTF("GET_FRAGMENT_OF_RECORDING");
+            out.writeInt(diagnosisId);
+            out.writeInt(fragmentIndex);
+            out.writeInt(length);
+            out.flush();
+
+
+            String responseType = in.readUTF();
+            if ("FRAGMENTS".equals(responseType)) {
+                int size = in.readInt();
+                if (size < 0) {
+                    System.err.println("Server returned negative fragment size: " + size);
+                    return new int[0];
+                }
+                final int MAX_ACCEPTABLE = Math.max(length, 100_000);
+                if (size > MAX_ACCEPTABLE) {
+                    System.err.println("Fragment size too large: " + size);
+                    // consume/skip or return empty
+                    return new int[0];
+                }
+
+                int[] fragments = new int[size];
+                for (int i = 0; i < size; i++) {
+                    fragments[i] = in.readInt();
+                }
+                return fragments;
+            } else if ("ERROR".equals(responseType)) {
+                String msg = in.readUTF();
+                System.err.println("Server error when requesting fragment: " + msg);
+                return new int[0];
+            } else {
+                System.err.println("Unexpected server response type for fragments: " + responseType);
+                return new int[0];
+            }
+        } catch (IOException e) {
+            System.err.println("I/O error while requesting fragments of recording: " + e.getMessage());
+            return new int[0];
+        }
+    }
+
+
+    private static List<Boolean> getStateOfFragmentsOfRecordingByID(DataOutputStream out, DataInputStream in, int diagnosisFileId, int[] fragmentIds) {
+        List<Boolean> states = new ArrayList<>();
+        if (fragmentIds == null) return states;
+
+        try {
+
+            out.writeUTF("GET_FRAGMENT_STATES");
+            out.writeInt(diagnosisFileId);
+            out.writeInt(fragmentIds.length);
+            for (int id : fragmentIds) {
+                out.writeInt(id);
+            }
+            out.flush();
+
+
+            String responseType = in.readUTF();
+            if (!"FRAGMENT_STATES".equals(responseType)) {
+                System.err.println("Unexpected server response type for fragment states: " + responseType);
+                return states;
+            }
+
+            int count = in.readInt();
+            for (int i = 0; i < count; i++) {
+                states.add(in.readBoolean());
+            }
+        } catch (IOException e) {
+            System.err.println("I/O error while requesting fragment states: " + e.getMessage());
+        }
+        return states;
+    }
+
+    private static List<DiagnosisFile> getAllDiagnosisFilesFromPatientId(DataOutputStream out, DataInputStream in, int patientId) {
+        List<DiagnosisFile> files = new ArrayList<>();
+        try {
+            out.writeUTF("GET_DIAGNOSIS_FILES_BY_PATIENT_ID");
+            out.writeInt(patientId);
+            out.flush();
+
+            String resp = in.readUTF();
+            if (!"DIAGNOSIS_FILES".equals(resp)) {
+                System.err.println("Unexpected response: " + resp);
+                return files;
+            }
+            int total = in.readInt();
+            DateTimeFormatter fmt = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+            for (int i = 0; i < total; i++) {
+                int id = in.readInt();
+                String symptomsStr = in.readUTF();
+                String diagnosis = in.readUTF();
+                String medication = in.readUTF();
+                String dateStr = in.readUTF();
+
+                LocalDateTime date = null;
+                try {
+                    if (dateStr != null && !dateStr.isEmpty()) {
+                        date = LocalDateTime.parse(dateStr, fmt);
+                    }
+                } catch (Exception ex) {
+                    date = null;
+                }
+
+                DiagnosisFile df = new DiagnosisFile();
+
+                ArrayList<String> symptoms = new ArrayList<>();
+                if (symptomsStr != null && !symptomsStr.isBlank()) {
+                    for (String s : symptomsStr.split(",")) {
+                        String t = s.trim();
+                        if (!t.isEmpty()) symptoms.add(t);
+                    }
+                }
+
+                setFieldIfExists(df, "id", id);
+                setFieldIfExists(df, "date", date); // se POJO ha LocalDate oppure LocalDateTime o String, verrà convertito
+                setFieldIfExists(df, "patientId", patientId);
+                setFieldIfExists(df, "symptoms", symptoms);
+                setFieldIfExists(df, "diagnosis", diagnosis);
+                setFieldIfExists(df, "medication", medication);
+
+                files.add(df);
+            }
+            files.sort(java.util.Comparator.comparing(DiagnosisFile::getDate,
+                            java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
+                    .reversed());
+        } catch (IOException e) {
+            System.err.println("I/O error while requesting diagnosis files by patient ID: " + e.getMessage());
+        }
+        return files;
+    }
+
 
 
     private static void releaseResources(BITalino bitalino, Socket socket, DataOutputStream outputStream, Scanner scanner, DataInputStream inputStream) {
