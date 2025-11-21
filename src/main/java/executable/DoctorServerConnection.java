@@ -99,12 +99,9 @@ public class DoctorServerConnection {
         Scanner scanner = new Scanner(System.in);
         String serverAddress;
         final int port = 9000; // puerto fijo
-        String MACAddress;
         Socket socket = null;
         DataOutputStream outputStream = null;
         DataInputStream inputStream = null;
-        BITalino bitalino = null;
-        BitalinoManager bitalinoManager = new BitalinoManager();
 
 
         while (true) {
@@ -112,14 +109,6 @@ public class DoctorServerConnection {
             serverAddress = scanner.nextLine();
             if (isValidIPAddress(serverAddress)) break;
             System.out.println("Invalid IP address format. Please try again.");
-        }
-
-
-        while (true) {
-            System.out.print("Enter MAC address (XX:XX:XX:XX:XX:XX): ");
-            MACAddress = scanner.nextLine();
-            if (BitalinoManager.isValidMacAddress(MACAddress)) break;
-            System.out.println("Invalid MAC address. Please enter a valid MAC address.");
         }
 
         try {
@@ -153,90 +142,10 @@ public class DoctorServerConnection {
                 }
             }
 
-            // BITalino
-            bitalino = new BITalino();
-            int samplingRate = 1000;
-
-            boolean done = false;
-            while (!done) {
-                System.out.println("\nReady to record. Press ENTER to start recording or type Q + ENTER to quit.");
-                String line = scanner.nextLine();
-                if (line.equalsIgnoreCase("Q")) {
-                    System.out.println("Quitting application.");
-                    done = true;
-                    break;
-                }
-                outputStream.writeUTF("START");
-                outputStream.flush();
-
-                try {
-                    bitalino.open(MACAddress, samplingRate);
-                    int[] channelsToAcquire = new int[]{1, 2};
-                    bitalino.start(channelsToAcquire);
-                    System.out.println("Recording started. Press ENTER to stop recording.");
-                } catch (Throwable ex) {
-                    System.err.println("Error starting BITalino: " + ex.getMessage());
-                    outputStream.writeUTF("ERROR");
-                    outputStream.writeUTF("BITalino open/start failed: " + ex.getMessage());
-                    outputStream.flush();
-                    try { bitalino.close(); } catch (Throwable ignored) {}
-                    continue;
-                }
-
-                Thread stopper = new Thread(() -> {
-                    try { System.in.read(); } catch (IOException ignored) {}
-                });
-                stopper.start();
-
-                int blockSize = 10;
-                long blockNumber = 0;
-                try {
-                    while (stopper.isAlive()) {
-                        Frame[] frames = bitalino.read(blockSize);
-                        for (Frame f : frames) {
-                            outputStream.writeUTF("DATA");
-                            outputStream.writeInt((int) blockNumber);
-                            outputStream.writeInt(f.seq);
-                            outputStream.writeInt(f.analog[1]);
-                            outputStream.writeInt(f.analog[2]);
-                            outputStream.flush();
-                            blockNumber++;
-                        }
-                    }
-                } catch (Throwable ex) {
-                    System.err.println("Error while recording/streaming frames: " + ex.getMessage());
-                    try {
-                        outputStream.writeUTF("ERROR");
-                        outputStream.writeUTF("Exception during recording: " + ex.getMessage());
-                        outputStream.flush();
-                    } catch (IOException ignored) {}
-                } finally {
-                    try { bitalino.stop(); bitalino.close(); } catch (Throwable ignored) {}
-                }
-
-                outputStream.writeUTF("END");
-                outputStream.flush();
-
-                try {
-                    String serverResponse = inputStream.readUTF();
-                    System.out.println("Server: " + serverResponse);
-                } catch (IOException e) {
-                    System.out.println("No ACK received (server may have disconnected).");
-                }
-
-                sendSymptomsInteractive(scanner, outputStream, inputStream);
-
-                System.out.println("Do you want to record again? (yes/no)");
-                String again = scanner.nextLine().trim().toLowerCase();
-                if (!again.equals("yes") && !again.equals("y")) {
-                    done = true;
-                }
-            }
-
         } catch (Throwable e) {
             Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error in the client", e);
         } finally {
-            releaseResources(bitalino, socket, outputStream, scanner, inputStream);
+            releaseResources(socket, outputStream, scanner, inputStream);
         }
     }
 
@@ -802,12 +711,9 @@ public class DoctorServerConnection {
 
 
 
-    private static void releaseResources(BITalino bitalino, Socket socket, DataOutputStream outputStream, Scanner scanner, DataInputStream inputStream) {
+    private static void releaseResources(Socket socket, DataOutputStream outputStream, Scanner scanner, DataInputStream inputStream) {
         if (scanner != null) scanner.close();
-        try { if (bitalino != null) bitalino.close(); }
-        catch (BITalinoException e) {
-            Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing Bitalino", e);
-        }
+
         try { if (outputStream != null) outputStream.close(); }
         catch (IOException e) {
             Logger.getLogger(DoctorServerConnection.class.getName()).log(Level.SEVERE, "Error closing OutputStream", e);
