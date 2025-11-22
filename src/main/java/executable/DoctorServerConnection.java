@@ -52,41 +52,8 @@ public class DoctorServerConnection {
     }
 
     private static boolean validateDNI(String dni) {
-        String s = normalizeDNI(dni);
-        if (s == null) return false;
-
-        // Soportar NIE: X/Y/Z -> 0/1/2 delante de los 7 dígitos restantes
-        if (s.matches("[XYZ]\\d{7}[A-Z]")) {
-            char first = s.charAt(0);
-            String prefix = first == 'X' ? "0" : first == 'Y' ? "1" : "2";
-            s = prefix + s.substring(1); // ahora s tiene 8 dígitos + letra
-        }
-
-        if (!s.matches("\\d{8}[A-Z]")) {
-            System.err.println("Formato DNI inválido tras normalizar: \"" + s + "\"");
-            return false;
-        }
-
-        final String LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE";
-        int number;
-        try {
-            number = Integer.parseInt(s.substring(0, 8));
-        } catch (NumberFormatException e) {
-            System.err.println("Los primeros 8 caracteres no son un número válido: \"" + s.substring(0,8) + "\"");
-            return false;
-        }
-
-        char expected = LETTERS.charAt(number % 23);
-        char provided = s.charAt(8);
-
-        if (provided != expected) {
-            System.err.println("DNI inválido. Normalizado: " + s +
-                    ". Letra esperada: " + expected +
-                    " (número % 23 = " + (number % 23) + "), letra proporcionada: " + provided);
-            return false;
-        }
-
-        return true;
+        if (dni == null) return false;
+        return dni.matches("\\d{8}[A-Z]");
     }
 
     private static boolean isValidEmail(String email) {
@@ -188,10 +155,10 @@ public class DoctorServerConnection {
 
             String birthday;
             while (true) {
-                System.out.print("Birthday (yyyy-MM-dd): ");
+                System.out.print("Birthday (dd-MM-yyyy): ");
                 birthday = scanner.nextLine().trim();
-                if (birthday.matches("\\d{4}-\\d{2}-\\d{2}")) break;
-                System.out.println("Invalid format. Use yyyy-MM-dd.");
+                if (birthday.matches("\\d{2}-\\d{2}-\\d{4}")) break;
+                System.out.println("Invalid format. Use dd-MM-yyyy.");
             }
 
             String sex;
@@ -314,7 +281,7 @@ public class DoctorServerConnection {
                     out.writeInt(-1);
                 }
             }
-            out.writeUTF(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            out.writeUTF(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss")));
             out.flush();
 
             String response = in.readUTF();
