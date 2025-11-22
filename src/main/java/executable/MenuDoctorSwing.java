@@ -388,11 +388,21 @@ public class MenuDoctorSwing extends JFrame {
             if (pass.length() < 6) { showWarn("Password must be at least 6 characters"); return; }
             if (name.isEmpty() || !name.matches("[a-zA-Z ]+")) { showWarn("Invalid name"); return; }
             if (surname.isEmpty() || !surname.matches("[a-zA-Z ]+")) { showWarn("Invalid surname"); return; }
-            if (!birthday.matches("\\d{2}-\\d{2}-\\d{4}")) { showWarn("Invalid birthday format, use dd-MM-yyyy"); return; }
+            if (!birthday.matches("\\d{2}-\\d{2}-\\d{4}")) {
+                showWarn("Invalid birthday format, use dd-MM-yyyy");
+                return;
+            }
             if (!isValidEmail(email)) { showWarn("Invalid email"); return; }
             if (specialty.isEmpty()) { showWarn("Specialty required"); return; }
             if (license.isEmpty()) { showWarn("License required"); return; }
-            if (!validateDNI(dni)) { showWarn("Invalid DNI/NIE"); return; }
+
+
+            if (!validateDNI(dni)) {
+                JOptionPane.showMessageDialog(MenuDoctorSwing.this,
+                        "Invalid DNI format. Expected 8 digits + letter (ej: 12345678A)",
+                        "Warning", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
 
             btnDoSign.setEnabled(false);
 
@@ -406,7 +416,6 @@ public class MenuDoctorSwing extends JFrame {
                     }
                     try {
                         synchronized (out) {
-                            // Debe coincidir con el comando que maneja ServerDoctorThread: "SIGNUP"
                             out.writeUTF("SIGNUP");
                             out.writeUTF(user);
                             out.writeUTF(pass);
@@ -470,14 +479,12 @@ public class MenuDoctorSwing extends JFrame {
 
     private static String normalizeDNI(String dni) {
         if (dni == null) return null;
-        return dni.replaceAll("[\\.\\s-]", "").toUpperCase();
+        return dni.replaceAll("[\\s-]", "").toUpperCase();
     }
 
     private static boolean validateDNI(String dni) {
-        String s = normalizeDNI(dni);
-        if (s == null) return false;
-        // Aceptar NIF o NIE por patrón (no se comprueba la letra real)
-        return s.matches("\\d{8}[A-Z]") || s.matches("[XYZ]\\d{7}[A-Z]");
+        if (dni == null) return false;
+        return dni.matches("\\d{8}[A-Z]");
     }
 
     private static boolean isValidEmail(String email) {
@@ -520,7 +527,7 @@ public class MenuDoctorSwing extends JFrame {
             centerPanel.setBackground(Color.WHITE);
             centerPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 60, 80));
 
-            JButton btnRecently = new JButton("<html><center>Recently finish &<br>Records ToDo</center></html>");
+            JButton btnRecently = new JButton("Diagnosis files to do");
             btnRecently.setPreferredSize(new Dimension(230, 110));
             btnRecently.setBackground(new Color(90, 136, 111));
             btnRecently.setFocusPainted(false);
@@ -649,7 +656,6 @@ public class MenuDoctorSwing extends JFrame {
                 protected Void doInBackground() {
                     try {
                         synchronized (out) {
-                            // Debe coincidir con el comando que maneja ServerDoctorThread: "LIST_PATIENTS"
                             out.writeUTF("LIST_PATIENTS");
                             out.flush();
 
