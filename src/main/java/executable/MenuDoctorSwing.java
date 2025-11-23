@@ -656,7 +656,7 @@ public class MenuDoctorSwing extends JFrame {
                 protected Void doInBackground() {
                     try {
                         synchronized (out) {
-                            out.writeUTF("LIST_PATIENTS");
+                            out.writeUTF("SEARCH_PATIENTS");
                             out.flush();
 
                             String resp = in.readUTF();
