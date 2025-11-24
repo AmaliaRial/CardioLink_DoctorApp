@@ -7,20 +7,17 @@ import bitalino.BitalinoManager;
 import bitalino.Frame;
 import common.enums.Sex;
 import pojos.DiagnosisFile;
+import pojos.Patient;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.lang.reflect.Method;
 import java.net.Socket;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Scanner;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
-import java.util.List;
 import java.time.LocalDate;
 import java.sql.Date;
 
@@ -115,6 +112,7 @@ public class DoctorServerConnection {
             releaseResources(socket, outputStream, scanner, inputStream);
         }
     }
+
 
     // SIGN UP
     private static void performSignUp(Scanner scanner, DataOutputStream out, DataInputStream in) {
@@ -296,6 +294,8 @@ public class DoctorServerConnection {
         }
     }
 
+    // HELPERS
+
     private static void setFieldIfExists(Object target, String name, Object value) {
         if (target == null || name == null) return;
         Class<?> cls = target.getClass();
@@ -388,142 +388,244 @@ public class DoctorServerConnection {
         return value;
     }
 
+    // java
+    public static List<DiagnosisFile> parseDiagnosisFileList(String payload) {
+        List<DiagnosisFile> files = new ArrayList<>();
+        if (payload == null) return files;
+        payload = payload.trim();
+        if (payload.isEmpty() || payload.equals("[]")) return files;
 
-    // methods
-    public static List<DiagnosisFile> listRecentlyFinishDiagFilesTODO(DataOutputStream out, DataInputStream in, int doctorId) {
+        int pos = 0;
+        while (true) {
+            int start = payload.indexOf("MedicalRecord{", pos);
+            if (start < 0) break;
+            start = payload.indexOf('{', start);
+            if (start < 0) break;
+            int brace = start + 1;
+            int depth = 1;
+            while (brace < payload.length() && depth > 0) {
+                char c = payload.charAt(brace);
+                if (c == '{') depth++;
+                else if (c == '}') depth--;
+                brace++;    // brace increases until I reach the } position that closes the MedicalRecord{
+            }
+            if (depth != 0) break;
+            String body = payload.substring(start + 1, brace - 1).trim();
+            pos = brace;
+
+            // parse key=value pairs in body
+            Map<String, String> map = new LinkedHashMap<>();
+            int i = 0;
+            while (i < body.length()) {
+                // read key
+                int eq = body.indexOf('=', i);
+                if (eq < 0) break;
+                String key = body.substring(i, eq).trim();
+                i = eq + 1;
+
+                // read value: could start with ' (quoted), [ (list), or plain until comma
+                String value;
+                if (i < body.length() && body.charAt(i) == '\'') {
+                    // quoted string
+                    i++; // skip '
+                    StringBuilder sb = new StringBuilder();
+                    while (i < body.length()) {
+                        char c = body.charAt(i++);
+                        if (c == '\'') break;
+                        if (c == '\\' && i < body.length()) { // support escaped chars
+                            sb.append(body.charAt(i++));
+                        } else {
+                            sb.append(c);
+                        }
+                    }
+                    value = sb.toString();
+                    // skip optional comma and space
+                    while (i < body.length() && (body.charAt(i) == ',' || Character.isWhitespace(body.charAt(i)))) i++;
+                } else if (i < body.length() && body.charAt(i) == '[') {
+                    // bracketed list - read until matching ]
+                    int j = i;
+                    int d = 0;
+                    StringBuilder sb = new StringBuilder();
+                    while (j < body.length()) {
+                        char c = body.charAt(j);
+                        if (c == '[') d++;
+                        else if (c == ']') {
+                            d--;
+                            if (d == 0) { sb.append(c); j++; break; }
+                        }
+                        sb.append(c);
+                        j++;
+                    }
+                    value = sb.toString();
+                    i = j;
+                    // skip optional comma and spaces
+                    while (i < body.length() && (body.charAt(i) == ',' || Character.isWhitespace(body.charAt(i)))) i++;
+                } else {
+                    // plain token until comma
+                    int comma = i;
+                    while (comma < body.length() && body.charAt(comma) != ',') comma++;
+                    value = body.substring(i, comma).trim();
+                    i = comma + 1;
+                    while (i < body.length() && Character.isWhitespace(body.charAt(i))) i++;
+                }
+                map.put(key, value);
+            }
+
+            // costruisci DiagnosisFile usando setFieldIfExists
+            DiagnosisFile df = new DiagnosisFile();
+            try {
+                // id (può essere "id='123'" oppure "id=123")
+                String idStr = map.get("id");
+                if (idStr != null) {
+                    idStr = idStr.replace("'", "").trim();
+                    try { setFieldIfExists(df, "id", Integer.parseInt(idStr)); } catch (Exception e) { setFieldIfExists(df, "id", idStr); }
+                }
+
+                // symptoms: può essere "['a','b']" o "[a, b]" o "a,b"
+                String symptomsRaw = map.get("symptoms");
+                if (symptomsRaw != null) {
+                    String s = symptomsRaw.trim();
+                    List<String> symptoms = new ArrayList<>();
+                    if (s.startsWith("[")) {
+                        // rimuovi [ ]
+                        String inner = s.substring(1, Math.max(1, s.length()-1));
+                        // split rispettando apici
+                        StringBuilder cur = new StringBuilder();
+                        boolean inQuote = false;
+                        for (int k = 0; k < inner.length(); k++) {
+                            char c = inner.charAt(k);
+                            if (c == '\'' || c == '\"') {
+                                inQuote = !inQuote;
+                                continue;
+                            }
+                            if (c == ',' && !inQuote) {
+                                String t = cur.toString().trim();
+                                if (!t.isEmpty()) symptoms.add(t);
+                                cur.setLength(0);
+                            } else {
+                                cur.append(c);
+                            }
+                        }
+                        String last = cur.toString().trim();
+                        if (!last.isEmpty()) symptoms.add(last);
+                    } else {
+                        // comma separated plain
+                        for (String part : s.split(",")) {
+                            String t = part.replace("'", "").replace("\"","").trim();
+                            if (!t.isEmpty()) symptoms.add(t);
+                        }
+                    }
+                    setFieldIfExists(df, "symptoms", symptoms);
+                }
+
+                // diagnosis, medication
+                if (map.containsKey("diagnosis")) setFieldIfExists(df, "diagnosis", map.get("diagnosis").replace("'", "").trim());
+                if (map.containsKey("medication")) setFieldIfExists(df, "medication", map.get("medication").replace("'", "").trim());
+
+                // date
+                if (map.containsKey("date")) {
+                    String dateRaw = map.get("date").replace("'", "").trim();
+                    if (!dateRaw.isEmpty()) {
+                        // tenta ISO_LOCAL_DATE_TIME e fallback a stringa
+                        try {
+                            LocalDateTime ldt = LocalDateTime.parse(dateRaw, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                            setFieldIfExists(df, "date", ldt);
+                        } catch (Exception ex) {
+                            setFieldIfExists(df, "date", dateRaw);
+                        }
+                    }
+                }
+
+                // patient id
+                if (map.containsKey("patient id")) {
+                    String pid = map.get("patient id").replace("'", "").trim();
+                    try { setFieldIfExists(df, "patientId", Integer.parseInt(pid)); } catch (Exception e) { setFieldIfExists(df, "patientId", pid); }
+                } else if (map.containsKey("patientId")) {
+                    String pid = map.get("patientId").replace("'", "").trim();
+                    try { setFieldIfExists(df, "patientId", Integer.parseInt(pid)); } catch (Exception e) { setFieldIfExists(df, "patientId", pid); }
+                }
+
+                // status
+                if (map.containsKey("status")) {
+                    String statusStr = map.get("status").replace("'", "").trim();
+                    try { setFieldIfExists(df, "status", Boolean.parseBoolean(statusStr)); } catch (Exception e) { setFieldIfExists(df, "status", statusStr); }
+                }
+
+            } catch (Throwable ignored) {}
+
+            files.add(df);
+        }
+
+        // ordina come prima
+        files.sort(java.util.Comparator.comparing(DiagnosisFile::getDate,
+                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed());
+
+        return files;
+    }
+
+
+
+    //----------------------------------------- METHODS-------------------------------------------------------
+
+    public static List<DiagnosisFile> listRecentlyFinishDiagFilesToDo(DataOutputStream out, DataInputStream in, int doctorId) {
         List<DiagnosisFile> files = new ArrayList<>();
         try {
-            out.writeUTF("LIST_RECENT_DIAGNOSIS_FILES");
-            out.writeInt(doctorId);
-            out.flush();
-
+            out.writeUTF("RECENTLY_FINISH");
             String resp = in.readUTF();
-            if (!"DIAGNOSIS_FILES".equals(resp)) {
+            if (!"RECENTLY_FINISH_LIST".equals(resp)) {
                 System.err.println("Unexpected response: " + resp);
-                return files;
+            } else if ("RECENTLY_FINISH_LIST".equals(resp)) {
+                String listDFstring = in.readUTF();
+                files = parseDiagnosisFileList(listDFstring);
             }
-            int total = in.readInt();
-            DateTimeFormatter fmt = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-            for (int i = 0; i < total; i++) {
-                int id = in.readInt();
-                String symptomsStr = in.readUTF();
-                String diagnosis = in.readUTF();
-                String medication = in.readUTF();
-                String dateStr = in.readUTF();
-                int patientId = in.readInt();
-
-                LocalDateTime date = null;
-                try {
-                    if (dateStr != null && !dateStr.isEmpty()) {
-                        date = LocalDateTime.parse(dateStr, fmt);
-                    }
-                } catch (Exception ex) {
-                    date = null;
-                }
-
-                DiagnosisFile df = new DiagnosisFile();
-
-                ArrayList<String> symptoms = new ArrayList<>();
-                if (symptomsStr != null && !symptomsStr.isBlank()) {
-                    for (String s : symptomsStr.split(",")) {
-                        String t = s.trim();
-                        if (!t.isEmpty()) symptoms.add(t);
-                    }
-                }
-
-                setFieldIfExists(df, "id", id);
-                setFieldIfExists(df, "date", date); // se POJO ha LocalDate oppure LocalDateTime o String, verrà convertito
-                setFieldIfExists(df, "patientId", patientId);
-                setFieldIfExists(df, "symptoms", symptoms);
-                setFieldIfExists(df, "diagnosis", diagnosis);
-                setFieldIfExists(df, "medication", medication);
-
-
-                files.add(df);
-            }
-
-            files.sort(java.util.Comparator.comparing(DiagnosisFile::getDate,
-                            java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
-                    .reversed());
-
         } catch (IOException e) {
-            System.err.println("I/O error while requesting recent diagnosis files: " + e.getMessage());
+            System.err.println("I/O error while listing recently finished diagnosis files: " + e.getMessage());
         }
         return files;
     }
 
 
-    private static String[] sendUpdatedDiagnosisFile(DataOutputStream out, DataInputStream in, int doctorId, DiagnosisFile file) {
-        if (file == null) return new String[0];
+    private static String [] sendDiagnosisAsString(DataOutputStream out, DataInputStream in, int doctorId, DiagnosisFile file) {
+        if (file == null) return new String[] {"ERROR", "Diagnosis file is null"};
         try {
-            out.writeUTF("SEND_UPDATED_DIAGNOSIS_FILE");
-            out.writeInt(doctorId);
-            Integer id = null;
-            try { id = file.getId(); } catch (Throwable ignored) {}
-            out.writeInt(id == null ? -1 : id);
-
-            String symptomsStr = "";
-            try {
-                List<String> symptoms = file.getSymptoms();
-                if (symptoms != null && !symptoms.isEmpty()) {
-                    StringBuilder sb = new StringBuilder();
-                    for (String s : symptoms) {
-                        if (s == null) continue;
-                        if (sb.length() > 0) sb.append(",");
-                        sb.append(s.trim());
-                    }
-                    symptomsStr = sb.toString();
-                }
-            } catch (Throwable ignored) {}
-            out.writeUTF(symptomsStr);
-
-            String diagnosis = "";
-            try { diagnosis = file.getDiagnosis(); } catch (Throwable ignored) {}
-            out.writeUTF(diagnosis);
-
-            String medication = "";
-            try { medication = file.getMedication() == null ? "" : file.getMedication(); } catch (Throwable ignored) {}
-            out.writeUTF(medication);
-
-            String dateStr = "";
-            try {
-                Object dateObj = null;
-                try { dateObj = file.getDate(); } catch (Throwable ignored) {}
-                if (dateObj != null) {
-                    if (dateObj instanceof LocalDateTime) {
-                        dateStr = ((LocalDateTime) dateObj).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-                    } else if (dateObj instanceof LocalDate) {
-                        dateStr = ((LocalDate) dateObj).atStartOfDay().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-                    } else if (dateObj instanceof Date) {
-                        java.time.Instant inst = ((Date) dateObj).toInstant();
-                        dateStr = LocalDateTime.ofInstant(inst, java.time.ZoneId.systemDefault()).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-                    } else {
-                        dateStr = dateObj.toString();
-                    }
-                }
-            } catch (Throwable ignored) {}
-            out.writeUTF(dateStr);
-
-            Integer patientId = null;
-            try { patientId = file.getPatientId(); } catch (Throwable ignored) {}
-            out.writeInt(patientId == null ? -1 : patientId);
-
-            out.flush();
-
+            out.writeUTF("COMPLETE_DIAGNOSIS_FILE");
             String resp = in.readUTF();
-            if ("ACK".equals(resp)) {
-                String msg = in.readUTF();
-                return new String[] {"ACK", msg};
-            } else if ("ERROR".equals(resp)) {
-                String msg = in.readUTF();
-                return new String[] {"ERROR", msg};
-            } else {
-                return new String[] {"UNKNOWN", resp};
+            if(!"COMPLETE_DIAGNOSISFILE_READY".equals(resp)){
+                return new String[] {"ERROR", "Server not ready to receive COMPLETE_DIAGNOSIS_FILE"};
             }
 
+            Integer idFile = null;
+            try { idFile = file.getId(); } catch (Throwable ignored) {}
+            if (idFile == null) {
+                return new String[] {"ERROR", "Diagnosis file id is null"};
+            }
+            String idDF = String.valueOf(idFile);
+
+            out.writeUTF(idDF);
+            System.out.println("Insert diagnosis:");
+            Scanner scanner = new Scanner(System.in);
+            String inputDiag = scanner.nextLine();
+            if (inputDiag != null && !inputDiag.isBlank()) {
+                out.writeUTF(inputDiag);
+            } else {
+                System.out.println("Invalid diagnosis");
+            }
+            String finalResp = in.readUTF();
+            if("!COMPLETE_DIAGNOSISFILE_SAVED".equals(finalResp)){
+                return new String[] {"ERROR", "Diagnosis was not saved successfully"};
+            } return new String[] {"OK", "Diagnosis saved successfully"};
+
+
         } catch (IOException e) {
-            return new String[] {"ERROR", e.getMessage()};
+            System.err.println("I/O error while sending diagnosis: " + e.getMessage());
+            return new String[] {"ERROR", "I/O error while sending diagnosis: " + e.getMessage()};
         }
+    }
+
+    private static Patient getPatientFromHIN(DataOutputStream out, DataInputStream in, String healthInsuranceNumber) throws IOException {
+        Patient patient = null;
+        out.writeUTF("SEARCH_PATIENT");
+        return patient;
     }
 
 
@@ -675,7 +777,6 @@ public class DoctorServerConnection {
         }
         return files;
     }
-
 
 
     private static void releaseResources(Socket socket, DataOutputStream outputStream, Scanner scanner, DataInputStream inputStream) {
