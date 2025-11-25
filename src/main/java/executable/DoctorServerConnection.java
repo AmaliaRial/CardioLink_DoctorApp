@@ -714,10 +714,11 @@ public class DoctorServerConnection {
             String resp = in.readUTF();
             if (!"RECENTLY_FINISH_LIST".equals(resp)) {
                 System.err.println("Unexpected response: " + resp);
-            } else if ("RECENTLY_FINISH_LIST".equals(resp)) {
+                return files;
+            }
                 String listDFstring = in.readUTF();
                 files = parseDiagnosisFileList(listDFstring);
-            }
+
         } catch (IOException e) {
             System.err.println("I/O error while listing recently finished diagnosis files: " + e.getMessage());
         }
@@ -817,42 +818,47 @@ public class DoctorServerConnection {
         return null;
     }
 
-    private static void downloadDiagnosisFile(DiagnosisFile df){
-        if (df == null) {
-            System.err.println("DiagnosisFile is null");
-            return;
-        }
-        Integer diagnosisId = null;
-        try { diagnosisId = df.getId(); } catch (Throwable ignored) {}
-        if (diagnosisId == null || diagnosisId < 0) {
-            System.err.println("Invalid diagnosis id");
-            return;
-        }
-
-        String userHome = System.getProperty("user.home");
-        java.nio.file.Path downloads = java.nio.file.Paths.get(userHome, "Downloads");
+    private static void downloadDiagnosisFile(Scanner scanner, DataOutputStream out, DataInputStream in){
         try {
-            java.nio.file.Files.createDirectories(downloads);
+            out.writeUTF("DOWNLOAD_DIAGNOSISFILE");
+            String resp = in.readUTF();
+            if (!"DOWNLOAD_DIAGNOSISFILE_STARTED".equals(resp)) {
+                System.err.println("Unexpected response: " + resp);
+                return;
+            }
+            String diagnosisId = scanner.nextLine();
+            if (diagnosisId == null) {
+                System.err.println("Invalid diagnosis id");
+                return;
+            }
+            out.writeUTF(diagnosisId);
+            String diagnosisFileString = in.readUTF();
+
+            String userHome = System.getProperty("user.home");
+            java.nio.file.Path downloads = java.nio.file.Paths.get(userHome, "Downloads");
+            try {
+                java.nio.file.Files.createDirectories(downloads);
+            } catch (IOException e) {
+                System.err.println("Cannot create Downloads folder: " + e.getMessage());
+                return;
+            }
+
+            System.out.println("Downloading Diagnosis File ID: " + diagnosisId);
+            String fileName = "diagnosis_" + diagnosisId + ".txt";
+            java.nio.file.Path outfile = downloads.resolve(fileName);
+
+            try (java.io.BufferedWriter bw = java.nio.file.Files.newBufferedWriter(outfile,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.TRUNCATE_EXISTING)) {
+                bw.write(diagnosisFileString);
+                bw.flush();
+                System.out.println("Saved diagnosis text to " + out.toString());
+            } catch (IOException e) {
+                System.err.println("Error saving diagnosis file: " + e.getMessage());
+            }
         } catch (IOException e) {
-            System.err.println("Cannot create Downloads folder: " + e.getMessage());
-            return;
+            System.err.println("Cannot receive diagnosis file from server: " + e.getMessage());
         }
-
-        System.out.println("Downloading Diagnosis File ID: " + diagnosisId);
-        String idDF = String.valueOf(diagnosisId);
-        String fileName = "diagnosis_" + diagnosisId + ".txt";
-        java.nio.file.Path out = downloads.resolve(fileName);
-
-        try (java.io.BufferedWriter bw = java.nio.file.Files.newBufferedWriter(out,
-                java.nio.file.StandardOpenOption.CREATE,
-                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING)) {
-            bw.write(df.toString());
-            bw.flush();
-            System.out.println("Saved diagnosis text to " + out.toString());
-        } catch (IOException e) {
-            System.err.println("Error saving diagnosis file: " + e.getMessage());
-        }
-
     }
 
 
