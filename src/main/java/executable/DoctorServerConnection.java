@@ -786,7 +786,7 @@ public class DoctorServerConnection {
             String hin = scanner.nextLine();
             out.writeInt(Integer.parseInt(hin));
             String resp = in.readUTF();
-            if(!"SENDING_PATIENT_OVERVIEW".equals(resp)){
+            if(!"PATIENT_OVERVIEW_SENT".equals(resp)){
                 System.err.println("Unexpected response: " + resp);
             }
             String patientString = in.readUTF();
