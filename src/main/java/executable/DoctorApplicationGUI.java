@@ -967,6 +967,7 @@ public class DoctorApplicationGUI extends JFrame {
                     String response = in.readUTF();
                     if ("LOGIN_RESULT".equals(response)) {
                         success = in.readBoolean();
+                        serverMsg = serverMsg+ "->"+ in.readUTF();
                         serverMsg = in.readUTF();
                         if (success) currentUsername = username;
                     } else {
@@ -1040,6 +1041,7 @@ public class DoctorApplicationGUI extends JFrame {
                     if ("ACK".equals(resp)) {
                         ok = true;
                         msg = in.readUTF();
+                        msg=msg+ "->" + in.readUTF();
                     } else if ("ERROR".equals(resp)) {
                         msg = in.readUTF();
                     } else {
@@ -1057,7 +1059,7 @@ public class DoctorApplicationGUI extends JFrame {
                     JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
                             msg != null ? msg : "Account created successfully",
                             "Success", JOptionPane.INFORMATION_MESSAGE);
-                    changeState("LOGIN");
+                    changeState("DOCTOR_MENU");
                     registerPanel.clearFields();
                 } else {
                     JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
@@ -1069,6 +1071,11 @@ public class DoctorApplicationGUI extends JFrame {
     }
 
     private void handleSearchPatient() {
+        try {
+            out.writeUTF("SEARCH_PATIENT");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         changeState("SEARCH_PATIENT");
     }
 
@@ -1372,8 +1379,14 @@ public class DoctorApplicationGUI extends JFrame {
     }
 
     private void handleLogout() {
+        try {
+            out.writeUTF("LOG_OUT");
+            out.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         currentUsername = null;
-        cleanupResources();
+        //cleanupResources();
         changeState("AUTH");
     }
 
