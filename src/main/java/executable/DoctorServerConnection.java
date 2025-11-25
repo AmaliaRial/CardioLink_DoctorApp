@@ -856,6 +856,71 @@ public class DoctorServerConnection {
     }
 
 
+    private void viewRecording(String diagnosisFileId, DataOutputStream out, DataInputStream in) throws IOException {
+        out.writeUTF("VIEW_RECORDING");
+
+        String message = diagnosisFileId + ",1";
+        out.writeUTF(message);
+
+        String fragment = in.readUTF();
+        String statesString = in.readUTF();
+
+        List<Boolean> stateList = new ArrayList<>();
+        if (!statesString.isEmpty()) {
+            String[] parts = statesString.split(",");
+            for (String p : parts) {
+                stateList.add(Boolean.parseBoolean(p.trim()));
+            }
+        }
+    }
+
+    private void changeFragment(String diagnosisFileId, int sequence, DataOutputStream out, DataInputStream in) throws IOException {
+        // 1. Enviar comando al servidor
+        out.writeUTF("CHANGE_FRAGMENT");
+
+        String message = diagnosisFileId + "," + sequence;
+        out.writeUTF(message);
+
+        String fragment = in.readUTF();
+        String confirmation = in.readUTF();
+    }
+
+    private void downloadRecording(String diagnosisFileId, DataOutputStream out, DataInputStream in) throws IOException {
+        out.writeUTF("DOWNLOAD_RECORDING");
+        out.writeUTF(diagnosisFileId);
+        String status = in.readUTF();
+
+        // Si no es el mensaje esperado, salimos sin hacer nada más
+        if (!"SENDING_RECORDING".equals(status)) {
+            return;
+        }
+
+        String ecgString = in.readUTF();
+        String edaString = in.readUTF();
+
+        String[] ecgValues = ecgString.split(",");
+        String[] edaValues = edaString.split(",");
+        int length = Math.min(ecgValues.length, edaValues.length);
+
+        // 6. Crear el CSV: una columna ECG y otra EDA
+        String fileName = "recording_" + diagnosisFileId + ".csv";
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName))) {
+            // Cabecera
+            writer.write("ECG,EDA");
+            writer.newLine();
+            // Datos fila a fila
+            for (int i = 0; i < length; i++) {
+                String ecgSample = ecgValues[i].trim();
+                String edaSample = edaValues[i].trim();
+
+                writer.write(ecgSample + "," + edaSample);
+                writer.newLine();
+            }
+        }
+    }
+
+
     private static int[] getFragmentOfRecording(DataOutputStream out, DataInputStream in, DiagnosisFile df, int fragmentIndex, int length) {
         if (df == null) {
             System.err.println("DiagnosisFile is null");
