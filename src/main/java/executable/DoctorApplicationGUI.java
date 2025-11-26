@@ -1,17 +1,21 @@
 package executable;
 
+import pojos.DiagnosisFile;
+import pojos.Patient;
+
 import javax.swing.*;
 import javax.swing.plaf.basic.BasicButtonUI;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.*;
+import java.lang.reflect.Method;
 import java.net.Socket;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.List;
 import java.util.regex.Pattern;
 
 public class DoctorApplicationGUI extends JFrame {
@@ -1101,12 +1105,11 @@ public class DoctorApplicationGUI extends JFrame {
 
     private void handleSelectPatient() {
         String selectedPatient = searchPatientPanel.getSelectedPatient();
+
         if (selectedPatient == null || selectedPatient.equals("No patients available")) {
             JOptionPane.showMessageDialog(this, "Please select a patient", "Warning", JOptionPane.WARNING_MESSAGE);
             return;
         }
-
-
 
 
         new SwingWorker<Void, Void>() {
@@ -1115,24 +1118,31 @@ public class DoctorApplicationGUI extends JFrame {
 
             @Override
             protected Void doInBackground() {
-                try {
+                Patient patient = null;
+                try{
                     out.writeUTF("VIEW_PATIENT");
-                    // Extraer HIN del string del paciente
-                    String hin = selectedPatient.replaceAll(".*?([0-9]+).*", "$1");
-                    out.writeInt(Integer.parseInt(hin));
+                    out.writeInt(Integer.parseInt(selectedPatient));
                     out.flush();
-
-                    String response = in.readUTF();
-                    if ("PATIENT_OVERVIEW_SENT".equals(response)) {
-                        patientInfo = in.readUTF();
-                        success = true;
-                    } else {
-                        patientInfo = "Server error: " + response;
+                    String resp = in.readUTF();
+                    if(!"PATIENT_OVERVIEW_SENT".equals(resp)){
+                        patientInfo="Unexpected response: " + resp;
                     }
-                } catch (IOException ex) {
-                    patientInfo = "Error retrieving patient information: " + ex.getMessage();
-                } catch (NumberFormatException ex) {
-                    patientInfo = "Invalid patient format";
+                    String patientString = in.readUTF();
+                    if(patientString == null || patientString.isBlank()){
+                        patientInfo="Received empty patient data";
+                        return null;
+                    }
+                    patient = parsePatientList(patientString).stream().findFirst().orElse(null);
+                    patientInfo= "name:"+patient.getNamePatient()+
+                            "\nsurname:"+patient.getSurnamePatient()+
+                            "\nDoB:"+patient.getDobPatient().getDay()+
+                            "-"+patient.getDobPatient().getMonth()+
+                            ""+patient.getDobPatient().getYear();
+                    success=true;
+
+                } catch(IOException e){
+                    System.err.println("I/O error while getting patient info: " + e.getMessage());
+                    return null;
                 }
                 return null;
             }
@@ -1149,6 +1159,410 @@ public class DoctorApplicationGUI extends JFrame {
                 }
             }
         }.execute();
+
+    }
+
+    public static java.util.List<Patient> parsePatientList(String payload) {
+        java.util.List<Patient> patients = new ArrayList<>();
+        if (payload == null) return patients;
+        payload = payload.trim();
+        if (payload.isEmpty()) return patients;
+
+        int pos = 0;
+        while (true) {
+            int start = payload.indexOf("Patient{", pos);
+            if (start < 0) break;
+            start = payload.indexOf('{', start);
+            if (start < 0) break;
+            int brace = start + 1;
+            int depth = 1;
+            while (brace < payload.length() && depth > 0) {
+                char c = payload.charAt(brace);
+                if (c == '{') depth++;
+                else if (c == '}') depth--;
+                brace++;
+            }
+            if (depth != 0) break;
+            String body = payload.substring(start + 1, brace - 1).trim();
+            pos = brace;
+
+            // parse key=value pairs
+            Map<String, String> map = new LinkedHashMap<>();
+            int i = 0;
+            while (i < body.length()) {
+                int eq = body.indexOf('=', i);
+                if (eq < 0) break;
+                String key = body.substring(i, eq).trim();
+                i = eq + 1;
+
+                String value;
+                if (i < body.length() && body.charAt(i) == '\'') {
+                    // quoted string with single quote
+                    i++; // skip '
+                    StringBuilder sb = new StringBuilder();
+                    while (i < body.length()) {
+                        char ch = body.charAt(i++);
+                        if (ch == '\'') break;
+                        if (ch == '\\' && i < body.length()) {
+                            sb.append(body.charAt(i++));
+                        } else {
+                            sb.append(ch);
+                        }
+                    }
+                    value = sb.toString();
+                    while (i < body.length() && (body.charAt(i) == ',' || Character.isWhitespace(body.charAt(i)))) i++;
+                } else if (i < body.length() && body.charAt(i) == '[') {
+                    // bracketed list
+                    int j = i;
+                    int d = 0;
+                    StringBuilder sb = new StringBuilder();
+                    while (j < body.length()) {
+                        char ch = body.charAt(j);
+                        sb.append(ch);
+                        if (ch == '[') d++;
+                        else if (ch == ']') {
+                            d--;
+                            if (d == 0) { j++; break; }
+                        }
+                        j++;
+                    }
+                    value = sb.toString();
+                    i = j;
+                    while (i < body.length() && (body.charAt(i) == ',' || Character.isWhitespace(body.charAt(i)))) i++;
+                } else {
+                    // plain until comma
+                    int comma = i;
+                    while (comma < body.length() && body.charAt(comma) != ',') comma++;
+                    value = body.substring(i, comma).trim();
+                    i = comma + 1;
+                    while (i < body.length() && Character.isWhitespace(body.charAt(i))) i++;
+                }
+                map.put(key, value);
+            }
+
+            // build Patient
+            Patient p = new Patient();
+            try {
+                if (map.containsKey("idPatient")) {
+                    String v = map.get("idPatient").replace("'", "").trim();
+                    try { setFieldIfExists(p, "idPatient", Integer.parseInt(v)); } catch (Exception e) { setFieldIfExists(p, "idPatient", v); }
+                }
+                if (map.containsKey("namePatient")) setFieldIfExists(p, "namePatient", map.get("namePatient").replace("'", "").trim());
+                if (map.containsKey("surnamePatient")) setFieldIfExists(p, "surnamePatient", map.get("surnamePatient").replace("'", "").trim());
+                if (map.containsKey("dniPatient")) setFieldIfExists(p, "dniPatient", map.get("dniPatient").replace("'", "").trim());
+                if (map.containsKey("dobPatient")) {
+                    String dob = map.get("dobPatient").replace("'", "").trim();
+                    if (!dob.isEmpty()) {
+                        // prova ISO_LOCAL_DATE e fallback a stringa
+                        try {
+                            java.time.LocalDate ld = java.time.LocalDate.parse(dob, DateTimeFormatter.ISO_LOCAL_DATE);
+                            setFieldIfExists(p, "dobPatient", ld);
+                        } catch (Exception ex) {
+                            setFieldIfExists(p, "dobPatient", dob);
+                        }
+                    }
+                }
+                if (map.containsKey("emailPatient")) setFieldIfExists(p, "emailPatient", map.get("emailPatient").replace("'", "").trim());
+                if (map.containsKey("sexPatient")) setFieldIfExists(p, "sexPatient", map.get("sexPatient").replace("'", "").trim());
+                if (map.containsKey("phoneNumberPatient")) {
+                    String v = map.get("phoneNumberPatient").replace("'", "").trim();
+                    try { setFieldIfExists(p, "phoneNumberPatient", Long.parseLong(v)); } catch (Exception e) { setFieldIfExists(p, "phoneNumberPatient", v); }
+                }
+                if (map.containsKey("healthInsuranceNumberPatient")) {
+                    String v = map.get("healthInsuranceNumberPatient").replace("'", "").trim();
+                    try { setFieldIfExists(p, "healthInsuranceNumberPatient", Integer.parseInt(v)); } catch (Exception e) { setFieldIfExists(p, "healthInsuranceNumberPatient", v); }
+                }
+                if (map.containsKey("emergencyContactPatient")) setFieldIfExists(p, "emergencyContactPatient", map.get("emergencyContactPatient").replace("'", "").trim());
+                if (map.containsKey("doctorId")) {
+                    String v = map.get("doctorId").replace("'", "").trim();
+                    try { setFieldIfExists(p, "doctorId", Integer.parseInt(v)); } catch (Exception e) { setFieldIfExists(p, "doctorId", v); }
+                }
+                if (map.containsKey("MACadress")) setFieldIfExists(p, "MACadress", map.get("MACadress").replace("'", "").trim());
+
+                // diagnosisList: usa il parser dedicato per ottenere List<DiagnosisFile>
+                if (map.containsKey("diagnosisFile") || map.containsKey("diagnosisList")) {
+                    String key = map.containsKey("diagnosisFile") ? "diagnosisFile" : "diagnosisList";
+                    String raw = map.get(key).trim();
+                    List<DiagnosisFile> diagFiles = parseDiagnosisFileList(raw);
+                    setFieldIfExists(p, "diagnosisList", diagFiles);
+                }
+
+                if (map.containsKey("userId")) {
+                    String v = map.get("userId").replace("'", "").trim();
+                    try { setFieldIfExists(p, "userId", Integer.parseInt(v)); } catch (Exception e) { setFieldIfExists(p, "userId", v); }
+                }
+            } catch (Throwable ignored) {}
+
+            patients.add(p);
+        }
+
+        return patients;
+    }
+    private static void setFieldIfExists(Object target, String name, Object value) {
+        if (target == null || name == null) return;
+        Class<?> cls = target.getClass();
+        String setterName = "set" + name;
+
+        try {
+            // cerca setter (case-insensitive)
+            for (Method m : cls.getMethods()) {
+                if (m.getName().equalsIgnoreCase(setterName) && m.getParameterCount() == 1) {
+                    Object arg = convertToParameterType(value, m.getParameterTypes()[0]);
+                    m.invoke(target, arg);
+                    return;
+                }
+            }
+
+            try {
+                java.lang.reflect.Field f = cls.getDeclaredField(name);
+                f.setAccessible(true);
+                Object arg = convertToParameterType(value, f.getType());
+                f.set(target, arg);
+            } catch (NoSuchFieldException ignored) {
+            }
+
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Object convertToParameterType(Object value, Class<?> targetType) {
+        if (value == null) return null;
+        if (targetType.isAssignableFrom(value.getClass())) return value;
+
+        String s = value.toString();
+        try {
+            if (targetType == String.class) return s;
+
+            if (targetType == Integer.class || targetType == int.class) {
+                if (value instanceof Number) return ((Number) value).intValue();
+                return Integer.parseInt(s);
+            }
+            if (targetType == Long.class || targetType == long.class) {
+                if (value instanceof Number) return ((Number) value).longValue();
+                return Long.parseLong(s);
+            }
+            if (targetType == java.time.LocalDateTime.class) {
+                if (value instanceof java.time.LocalDateTime) return value;
+                if (value instanceof java.time.LocalDate) return ((java.time.LocalDate) value).atStartOfDay();
+                return java.time.LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            }
+            if (targetType == java.time.LocalDate.class) {
+                if (value instanceof java.time.LocalDate) return value;
+                if (value instanceof java.time.LocalDateTime) return ((java.time.LocalDateTime) value).toLocalDate();
+                return java.time.LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE);
+            }
+            if (java.util.Date.class.isAssignableFrom(targetType)) {
+                if (value instanceof java.util.Date) return value;
+                if (value instanceof java.time.LocalDateTime) {
+                    return java.util.Date.from(((java.time.LocalDateTime) value).atZone(java.time.ZoneId.systemDefault()).toInstant());
+                }
+                if (value instanceof java.time.LocalDate) {
+                    return java.util.Date.from(((java.time.LocalDate) value).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+                }
+
+                java.time.LocalDateTime ldt = java.time.LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                return java.util.Date.from(ldt.atZone(java.time.ZoneId.systemDefault()).toInstant());
+            }
+
+            if (java.util.List.class.isAssignableFrom(targetType)) {
+                if (value instanceof java.util.List) return value;
+                // se è una stringa separata da virgole, creiamo una ArrayList
+                java.util.List<String> list = new java.util.ArrayList<>();
+                if (s != null && !s.isBlank()) {
+                    for (String part : s.split(",")) {
+                        String t = part.trim();
+                        if (!t.isEmpty()) list.add(t);
+                    }
+                }
+                return list;
+            }
+
+            if (targetType.isEnum()) {
+                @SuppressWarnings({"rawtypes", "unchecked"})
+                Object e = Enum.valueOf((Class<Enum>) targetType, s);
+                return e;
+            }
+
+        } catch (Exception ignored) {
+            // fallback al valore originale
+        }
+        return value;
+    }
+
+    // java
+    public static List<DiagnosisFile> parseDiagnosisFileList(String payload) {
+        List<DiagnosisFile> files = new ArrayList<>();
+        if (payload == null) return files;
+        payload = payload.trim();
+        if (payload.isEmpty() || payload.equals("[]")) return files;
+
+        int pos = 0;
+        while (true) {
+            int start = payload.indexOf("MedicalRecord{", pos);
+            if (start < 0) break;
+            start = payload.indexOf('{', start);
+            if (start < 0) break;
+            int brace = start + 1;
+            int depth = 1;
+            while (brace < payload.length() && depth > 0) {
+                char c = payload.charAt(brace);
+                if (c == '{') depth++;
+                else if (c == '}') depth--;
+                brace++;    // brace increases until I reach the } position that closes the MedicalRecord{
+            }
+            if (depth != 0) break;
+            String body = payload.substring(start + 1, brace - 1).trim();
+            pos = brace;
+
+            // parse key=value pairs in body
+            Map<String, String> map = new LinkedHashMap<>();
+            int i = 0;
+            while (i < body.length()) {
+                // read key
+                int eq = body.indexOf('=', i);
+                if (eq < 0) break;
+                String key = body.substring(i, eq).trim();
+                i = eq + 1;
+
+                // read value: could start with ' (quoted), [ (list), or plain until comma
+                String value;
+                if (i < body.length() && body.charAt(i) == '\'') {
+                    // quoted string
+                    i++; // skip '
+                    StringBuilder sb = new StringBuilder();
+                    while (i < body.length()) {
+                        char c = body.charAt(i++);
+                        if (c == '\'') break;
+                        if (c == '\\' && i < body.length()) { // support escaped chars
+                            sb.append(body.charAt(i++));
+                        } else {
+                            sb.append(c);
+                        }
+                    }
+                    value = sb.toString();
+                    // skip optional comma and space
+                    while (i < body.length() && (body.charAt(i) == ',' || Character.isWhitespace(body.charAt(i)))) i++;
+                } else if (i < body.length() && body.charAt(i) == '[') {
+                    // bracketed list - read until matching ]
+                    int j = i;
+                    int d = 0;
+                    StringBuilder sb = new StringBuilder();
+                    while (j < body.length()) {
+                        char c = body.charAt(j);
+                        if (c == '[') d++;
+                        else if (c == ']') {
+                            d--;
+                            if (d == 0) { sb.append(c); j++; break; }
+                        }
+                        sb.append(c);
+                        j++;
+                    }
+                    value = sb.toString();
+                    i = j;
+                    // skip optional comma and spaces
+                    while (i < body.length() && (body.charAt(i) == ',' || Character.isWhitespace(body.charAt(i)))) i++;
+                } else {
+                    // plain token until comma
+                    int comma = i;
+                    while (comma < body.length() && body.charAt(comma) != ',') comma++;
+                    value = body.substring(i, comma).trim();
+                    i = comma + 1;
+                    while (i < body.length() && Character.isWhitespace(body.charAt(i))) i++;
+                }
+                map.put(key, value);
+            }
+
+            // costruisci DiagnosisFile usando setFieldIfExists
+            DiagnosisFile df = new DiagnosisFile();
+            try {
+                // id (può essere "id='123'" oppure "id=123")
+                String idStr = map.get("id");
+                if (idStr != null) {
+                    idStr = idStr.replace("'", "").trim();
+                    try { setFieldIfExists(df, "id", Integer.parseInt(idStr)); } catch (Exception e) { setFieldIfExists(df, "id", idStr); }
+                }
+
+                // symptoms: può essere "['a','b']" o "[a, b]" o "a,b"
+                String symptomsRaw = map.get("symptoms");
+                if (symptomsRaw != null) {
+                    String s = symptomsRaw.trim();
+                    List<String> symptoms = new ArrayList<>();
+                    if (s.startsWith("[")) {
+                        // rimuovi [ ]
+                        String inner = s.substring(1, Math.max(1, s.length()-1));
+                        // split rispettando apici
+                        StringBuilder cur = new StringBuilder();
+                        boolean inQuote = false;
+                        for (int k = 0; k < inner.length(); k++) {
+                            char c = inner.charAt(k);
+                            if (c == '\'' || c == '\"') {
+                                inQuote = !inQuote;
+                                continue;
+                            }
+                            if (c == ',' && !inQuote) {
+                                String t = cur.toString().trim();
+                                if (!t.isEmpty()) symptoms.add(t);
+                                cur.setLength(0);
+                            } else {
+                                cur.append(c);
+                            }
+                        }
+                        String last = cur.toString().trim();
+                        if (!last.isEmpty()) symptoms.add(last);
+                    } else {
+                        // comma separated plain
+                        for (String part : s.split(",")) {
+                            String t = part.replace("'", "").replace("\"","").trim();
+                            if (!t.isEmpty()) symptoms.add(t);
+                        }
+                    }
+                    setFieldIfExists(df, "symptoms", symptoms);
+                }
+
+                // diagnosis, medication
+                if (map.containsKey("diagnosis")) setFieldIfExists(df, "diagnosis", map.get("diagnosis").replace("'", "").trim());
+                if (map.containsKey("medication")) setFieldIfExists(df, "medication", map.get("medication").replace("'", "").trim());
+
+                // date
+                if (map.containsKey("date")) {
+                    String dateRaw = map.get("date").replace("'", "").trim();
+                    if (!dateRaw.isEmpty()) {
+                        // tenta ISO_LOCAL_DATE_TIME e fallback a stringa
+                        try {
+                            LocalDateTime ldt = LocalDateTime.parse(dateRaw, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                            setFieldIfExists(df, "date", ldt);
+                        } catch (Exception ex) {
+                            setFieldIfExists(df, "date", dateRaw);
+                        }
+                    }
+                }
+
+                // patient id
+                if (map.containsKey("patient id")) {
+                    String pid = map.get("patient id").replace("'", "").trim();
+                    try { setFieldIfExists(df, "patientId", Integer.parseInt(pid)); } catch (Exception e) { setFieldIfExists(df, "patientId", pid); }
+                } else if (map.containsKey("patientId")) {
+                    String pid = map.get("patientId").replace("'", "").trim();
+                    try { setFieldIfExists(df, "patientId", Integer.parseInt(pid)); } catch (Exception e) { setFieldIfExists(df, "patientId", pid); }
+                }
+
+                // status
+                if (map.containsKey("status")) {
+                    String statusStr = map.get("status").replace("'", "").trim();
+                    try { setFieldIfExists(df, "status", Boolean.parseBoolean(statusStr)); } catch (Exception e) { setFieldIfExists(df, "status", statusStr); }
+                }
+
+            } catch (Throwable ignored) {}
+
+            files.add(df);
+        }
+
+        // ordina come prima
+        files.sort(java.util.Comparator.comparing(DiagnosisFile::getDate,
+                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed());
+
+        return files;
     }
 
     private void handleBackToMenuFromSearchPatient(){
