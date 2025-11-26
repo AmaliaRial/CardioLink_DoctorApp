@@ -9,6 +9,7 @@ import java.io.*;
 import java.net.Socket;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -138,6 +139,9 @@ public class DoctorApplicationGUI extends JFrame {
                 break;
             case "SEARCH_PATIENT":
                 showPanel(SEARCH_PATIENT_PANEL);
+                try {
+                    searchPatientPanel.loadPatientList();
+                } catch (Exception ignored){}
                 break;
             case "VIEW_PATIENT":
                 showPanel(VIEW_PATIENT_PANEL);
@@ -521,6 +525,7 @@ public class DoctorApplicationGUI extends JFrame {
         private DefaultComboBoxModel<String> patientModel;
 
         public SearchPatientPanel() {
+
             setLayout(new GridBagLayout());
             setBackground(new Color(171, 191, 234));
             setBorder(BorderFactory.createEmptyBorder(24, 36, 24, 36));
@@ -553,16 +558,12 @@ public class DoctorApplicationGUI extends JFrame {
             searchButton.setFocusPainted(false);
             searchButton.addActionListener(e -> handleSelectPatient());
 
-            JButton refreshButton = new JButton("Refresh List");
-            refreshButton.addActionListener(e -> loadPatientList());
-
             JButton backButton = new JButton("Back to Menu");
-            backButton.addActionListener(e -> changeState("DOCTOR_MENU"));
+            backButton.addActionListener(e -> handleBackToMenuFromSearchPatient());
 
             JPanel buttonPanel = new JPanel(new FlowLayout());
             buttonPanel.setOpaque(false);
             buttonPanel.add(searchButton);
-            buttonPanel.add(refreshButton);
             buttonPanel.add(backButton);
 
             g.gridx = 0;
@@ -586,8 +587,8 @@ public class DoctorApplicationGUI extends JFrame {
                 @Override
                 protected Void doInBackground() {
                     try {
-                        out.writeUTF("SEARCH_PATIENT");
-                        out.flush();
+                        //out.writeUTF("SEARCH_PATIENT");
+                        //out.flush();
                         patientList = in.readUTF();
                     } catch (IOException ex) {
                         patientList = "Error loading patient list";
@@ -608,6 +609,22 @@ public class DoctorApplicationGUI extends JFrame {
                     }
                 }
             }.execute();
+        }
+
+        private static String[] getAllHIN(DataOutputStream out, DataInputStream in) throws IOException {
+            out.writeUTF("SEARCH_PATIENT");
+            out.flush();
+            String listHIN = null;
+            listHIN = in.readUTF();
+            if (listHIN == null || listHIN.isBlank()) {
+                return new String[0];
+            }
+            listHIN = listHIN.trim();
+            if (listHIN.isEmpty()) {
+                return new String[0];
+            }
+            String[] hinArray = listHIN.split("\\s*,\\s*");
+            return Arrays.stream(hinArray).map(String::trim).toArray(String[]::new);
         }
     }
 
@@ -964,14 +981,16 @@ public class DoctorApplicationGUI extends JFrame {
                     out.writeUTF(pass);
                     out.flush();
 
+
                     String response = in.readUTF();
                     if ("LOGIN_RESULT".equals(response)) {
                         success = in.readBoolean();
-                        serverMsg = serverMsg+ "->"+ in.readUTF();
                         serverMsg = in.readUTF();
+                        serverMsg = serverMsg+ "-> "+ in.readUTF();
                         if (success) currentUsername = username;
                     } else {
                         serverMsg = "Unexpected server response: " + response;
+                        serverMsg = serverMsg+ "->"+ in.readUTF();
                     }
                 } catch (IOException ex) {
                     serverMsg = "Connection error: " + ex.getMessage();
@@ -1073,6 +1092,7 @@ public class DoctorApplicationGUI extends JFrame {
     private void handleSearchPatient() {
         try {
             out.writeUTF("SEARCH_PATIENT");
+            out.flush();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -1085,6 +1105,9 @@ public class DoctorApplicationGUI extends JFrame {
             JOptionPane.showMessageDialog(this, "Please select a patient", "Warning", JOptionPane.WARNING_MESSAGE);
             return;
         }
+
+
+
 
         new SwingWorker<Void, Void>() {
             private String patientInfo = null;
@@ -1126,6 +1149,18 @@ public class DoctorApplicationGUI extends JFrame {
                 }
             }
         }.execute();
+    }
+
+    private void handleBackToMenuFromSearchPatient(){
+        try {
+            out.writeUTF("BACK_TO_MENU");
+            out.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        currentUsername = null;
+        //cleanupResources();
+        changeState("DOCTOR_MENU");
     }
 
     private void handleViewDiagnosisFiles() {
