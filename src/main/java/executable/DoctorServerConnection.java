@@ -821,6 +821,7 @@ public class DoctorServerConnection {
     private static void downloadDiagnosisFile(Scanner scanner, DataOutputStream out, DataInputStream in){
         try {
             out.writeUTF("DOWNLOAD_DIAGNOSISFILE");
+            out.flush();
             String resp = in.readUTF();
             if (!"DOWNLOAD_DIAGNOSISFILE_STARTED".equals(resp)) {
                 System.err.println("Unexpected response: " + resp);
@@ -867,6 +868,7 @@ public class DoctorServerConnection {
 
         String message = diagnosisFileId + ",1";
         out.writeUTF(message);
+        out.flush();
 
         String fragment = in.readUTF();
         String statesString = in.readUTF();
@@ -886,6 +888,7 @@ public class DoctorServerConnection {
 
         String message = diagnosisFileId + "," + sequence;
         out.writeUTF(message);
+        out.flush();
 
         String fragment = in.readUTF();
         String confirmation = in.readUTF();
@@ -894,6 +897,7 @@ public class DoctorServerConnection {
     private void downloadRecording(String diagnosisFileId, DataOutputStream out, DataInputStream in) throws IOException {
         out.writeUTF("DOWNLOAD_RECORDING");
         out.writeUTF(diagnosisFileId);
+        out.flush();
         String status = in.readUTF();
 
         // Si no es el mensaje esperado, salimos sin hacer nada más
