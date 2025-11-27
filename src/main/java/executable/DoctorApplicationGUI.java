@@ -634,24 +634,101 @@ public class DoctorApplicationGUI extends JFrame {
 
     // Panel de visualización de paciente
     class ViewPatientPanel extends JPanel {
-        private JTextArea patientInfoArea;
+        private JLabel nameLabel;
+        private JLabel dobLabel;
+        private JLabel hinLabel;
+        private JLabel sexLabel;
+        private JList<String> diagnosisList;
+        private DefaultListModel<String> diagnosisModel;
 
         public ViewPatientPanel() {
-            setLayout(new BorderLayout());
+            setLayout(new BorderLayout(20, 20));
             setBackground(new Color(171, 191, 234));
             setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-            JLabel label = new JLabel("Patient Information", JLabel.CENTER);
-            label.setFont(label.getFont().deriveFont(Font.BOLD, 22f));
-            add(label, BorderLayout.NORTH);
+            // Panel superior con información del paciente
+            JPanel patientInfoPanel = createPatientInfoPanel();
+            add(patientInfoPanel, BorderLayout.NORTH);
 
-            patientInfoArea = new JTextArea();
-            patientInfoArea.setEditable(false);
-            patientInfoArea.setBackground(new Color(200, 220, 240));
-            patientInfoArea.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-            add(new JScrollPane(patientInfoArea), BorderLayout.CENTER);
+            // Panel central con lista de diagnósticos
+            JPanel diagnosisPanel = createDiagnosisPanel();
+            add(diagnosisPanel, BorderLayout.CENTER);
 
-            JPanel buttonPanel = new JPanel(new FlowLayout());
+            // Panel inferior con botones
+            JPanel buttonPanel = createButtonPanel();
+            add(buttonPanel, BorderLayout.SOUTH);
+        }
+
+        private JPanel createPatientInfoPanel() {
+            JPanel panel = new JPanel(new GridBagLayout());
+            panel.setBackground(new Color(171, 191, 234));
+            panel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createTitledBorder("Patient Information"),
+                    BorderFactory.createEmptyBorder(10, 10, 10, 10)
+            ));
+
+            GridBagConstraints g = new GridBagConstraints();
+            g.insets = new Insets(5, 5, 5, 5);
+            g.anchor = GridBagConstraints.WEST;
+
+            // Name
+            g.gridx = 0; g.gridy = 0;
+            panel.add(new JLabel("Name:"), g);
+            g.gridx = 1;
+            nameLabel = new JLabel();
+            nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD));
+            panel.add(nameLabel, g);
+
+            // Date of Birth
+            g.gridx = 0; g.gridy = 1;
+            panel.add(new JLabel("Date of Birth:"), g);
+            g.gridx = 1;
+            dobLabel = new JLabel();
+            panel.add(dobLabel, g);
+
+            // Health Insurance Number
+            g.gridx = 0; g.gridy = 2;
+            panel.add(new JLabel("Insurance Number:"), g);
+            g.gridx = 1;
+            hinLabel = new JLabel();
+            hinLabel.setFont(hinLabel.getFont().deriveFont(Font.BOLD));
+            panel.add(hinLabel, g);
+
+            // Sex
+            g.gridx = 0; g.gridy = 3;
+            panel.add(new JLabel("Sex:"), g);
+            g.gridx = 1;
+            sexLabel = new JLabel();
+            panel.add(sexLabel, g);
+
+            return panel;
+        }
+
+        private JPanel createDiagnosisPanel() {
+            JPanel panel = new JPanel(new BorderLayout());
+            panel.setBackground(new Color(171, 191, 234));
+            panel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createTitledBorder("Diagnosis History"),
+                    BorderFactory.createEmptyBorder(10, 10, 10, 10)
+            ));
+
+            diagnosisModel = new DefaultListModel<>();
+            diagnosisList = new JList<>(diagnosisModel);
+            diagnosisList.setBackground(Color.WHITE);
+            diagnosisList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            diagnosisList.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+
+            JScrollPane scrollPane = new JScrollPane(diagnosisList);
+            scrollPane.setPreferredSize(new Dimension(400, 200));
+            panel.add(scrollPane, BorderLayout.CENTER);
+
+            return panel;
+        }
+
+        private JPanel createButtonPanel() {
+            JPanel panel = new JPanel(new FlowLayout());
+            panel.setBackground(new Color(171, 191, 234));
+
             JButton viewDiagnosisButton = new JButton("View Diagnosis Files");
             viewDiagnosisButton.setBackground(new Color(11, 87, 147));
             viewDiagnosisButton.setForeground(Color.WHITE);
@@ -663,15 +740,39 @@ public class DoctorApplicationGUI extends JFrame {
             JButton backButton = new JButton("Back to Search");
             backButton.addActionListener(e -> changeState("SEARCH_PATIENT"));
 
-            buttonPanel.add(viewDiagnosisButton);
-            buttonPanel.add(backButton);
-            add(buttonPanel, BorderLayout.SOUTH);
+            panel.add(viewDiagnosisButton);
+            panel.add(backButton);
+
+            return panel;
         }
 
-        public void setPatientInfo(String info) {
-            patientInfoArea.setText(info);
+        public void setPatientInfo(Patient patient) {
+            // Actualizar información del paciente
+            nameLabel.setText(patient.getNamePatient() + " " + patient.getSurnamePatient());
+            dobLabel.setText(String.format("%02d-%02d-%d",
+                    patient.getDobPatient().getDay(),
+                    patient.getDobPatient().getMonth(),
+                    patient.getDobPatient().getYear()));
+            hinLabel.setText(String.valueOf(patient.getHealthInsuranceNumberPatient()));
+            sexLabel.setText(patient.getSexPatient().toString());
+
+            // Limpiar y actualizar lista de diagnósticos
+            diagnosisModel.clear();
+            if (patient.getDiagnosisList() != null && !patient.getDiagnosisList().isEmpty()) {
+                for (DiagnosisFile df : patient.getDiagnosisList()) {
+                    String diagnosisEntry = String.format("Date: %02d-%02d-%d | Diagnosis: %s",
+                            df.getDate().getDayOfMonth(),
+                            df.getDate().getMonth(),
+                            df.getDate().getYear(),
+                            df.getDiagnosis());
+                    diagnosisModel.addElement(diagnosisEntry);
+                }
+            } else {
+                diagnosisModel.addElement("No diagnosis records found");
+            }
         }
     }
+
 
     // Panel de visualización de diagnóstico
     class ViewDiagnosisFilePanel extends JPanel {
@@ -1111,59 +1212,117 @@ public class DoctorApplicationGUI extends JFrame {
             return;
         }
 
-
         new SwingWorker<Void, Void>() {
             private String patientInfo = null;
             private boolean success = false;
+            private Patient patient = null; // Inicializar como null
 
             @Override
             protected Void doInBackground() {
-                Patient patient = null;
-                try{
+                try {
                     out.writeUTF("VIEW_PATIENT");
                     out.writeInt(Integer.parseInt(selectedPatient));
                     out.flush();
+
                     String resp = in.readUTF();
-                    if(!"PATIENT_OVERVIEW_SENT".equals(resp)){
-                        patientInfo="Unexpected response: " + resp;
-                    }
-                    String patientString = in.readUTF();
-                    if(patientString == null || patientString.isBlank()){
-                        patientInfo="Received empty patient data";
+                    System.out.println("Server response: " + resp); // Debug
+
+                    if (!"PATIENT_OVERVIEW_SENT".equals(resp)) {
+                        patientInfo = "Unexpected response: " + resp;
                         return null;
                     }
-                    patient = parsePatientList(patientString).stream().findFirst().orElse(null);
-                    patientInfo= "name:"+patient.getNamePatient()+
-                            "\nsurname:"+patient.getSurnamePatient()+
-                            "\nDoB:"+patient.getDobPatient().getDay()+
-                            "-"+patient.getDobPatient().getMonth()+
-                            ""+patient.getDobPatient().getYear();
-                    success=true;
 
-                } catch(IOException e){
-                    System.err.println("I/O error while getting patient info: " + e.getMessage());
-                    return null;
+                    String patientString = in.readUTF();
+                    System.out.println("Patient data received: " + patientString); // Debug
+
+                    if (patientString == null || patientString.isBlank()) {
+                        patientInfo = "Received empty patient data";
+                        return null;
+                    }
+
+                    // Parsear el paciente
+                    List<Patient> patients = parsePatientList(patientString);
+                    if (patients == null || patients.isEmpty()) {
+                        patientInfo = "No patient data could be parsed";
+                        return null;
+                    }
+
+                    this.patient = patients.get(0);
+                    debugPatientData(this.patient);// Tomar el primer paciente
+                    if (this.patient == null) {
+                        patientInfo = "Parsed patient is null";
+                        return null;
+                    }
+
+                    // Verificar que los datos esenciales no sean null
+                    if (this.patient.getDobPatient() == null) {
+                        patientInfo = "Patient date of birth is null";
+                        return null;
+                    }
+
+                    patientInfo = "Patient data loaded successfully";
+                    success = true;
+
+                } catch (IOException e) {
+                    patientInfo = "I/O error while getting patient info: " + e.getMessage();
+                    e.printStackTrace();
+                } catch (NumberFormatException e) {
+                    patientInfo = "Invalid patient ID format: " + selectedPatient;
+                    e.printStackTrace();
+                } catch (Exception e) {
+                    patientInfo = "Unexpected error: " + e.getMessage();
+                    e.printStackTrace();
                 }
                 return null;
             }
 
             @Override
             protected void done() {
-                if (success) {
-                    viewPatientPanel.setPatientInfo(patientInfo);
-                    currentPatientInfo = patientInfo;
-                    changeState("VIEW_PATIENT");
-                } else {
+                try {
+                    if (success && patient != null) {
+                        viewPatientPanel.setPatientInfo(patient);
+                        currentPatientInfo = patientInfo;
+                        changeState("VIEW_PATIENT");
+                    } else {
+                        JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
+                                patientInfo != null ? patientInfo : "Unknown error occurred",
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                } catch (Exception ex) {
                     JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
-                            patientInfo, "Error", JOptionPane.ERROR_MESSAGE);
+                            "Error displaying patient: " + ex.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
+                    ex.printStackTrace();
                 }
             }
         }.execute();
-
     }
 
-    public static java.util.List<Patient> parsePatientList(String payload) {
-        java.util.List<Patient> patients = new ArrayList<>();
+    private void debugPatientData(Patient patient) {
+        if (patient == null) {
+            System.out.println("Patient is NULL");
+            return;
+        }
+        System.out.println("Patient name: " + patient.getNamePatient());
+        System.out.println("Patient surname: " + patient.getSurnamePatient());
+        System.out.println("Patient HIN: " + patient.getHealthInsuranceNumberPatient());
+        System.out.println("Patient sex: " + patient.getSexPatient());
+        if (patient.getDobPatient() != null) {
+            System.out.println("Patient DoB: " + patient.getDobPatient().getDay() +
+                    "-" + patient.getDobPatient().getMonth() +
+                    "-" + patient.getDobPatient().getYear());
+        } else {
+            System.out.println("Patient DoB is NULL");
+        }
+        if (patient.getDiagnosisList() != null) {
+            System.out.println("Diagnosis count: " + patient.getDiagnosisList().size());
+        } else {
+            System.out.println("Diagnosis list is NULL");
+        }
+    }
+
+    public static List<Patient> parsePatientList(String payload) {
+        List<Patient> patients = new ArrayList<>();
         if (payload == null) return patients;
         payload = payload.trim();
         if (payload.isEmpty()) return patients;
