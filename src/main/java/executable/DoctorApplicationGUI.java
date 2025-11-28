@@ -142,10 +142,27 @@ public class DoctorApplicationGUI extends JFrame {
                 showPanel(DOCTOR_MENU_PANEL);
                 break;
             case "SEARCH_PATIENT":
+                try {
+                    System.out.println(in.available());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
                 showPanel(SEARCH_PATIENT_PANEL);
                 try {
-                    searchPatientPanel.loadPatientList();
-                } catch (Exception ignored){}
+                    System.out.println(in.available());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                try {
+                   searchPatientPanel.loadPatientList();
+               } catch (Exception ignored){
+                   System.out.println("error");
+               }
+                try {
+                    System.out.println(in.available());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
                 break;
             case "VIEW_PATIENT":
                 showPanel(VIEW_PATIENT_PANEL);
@@ -577,7 +594,7 @@ public class DoctorApplicationGUI extends JFrame {
             add(buttonPanel, g);
 
             // Cargar lista de pacientes al inicializar
-            loadPatientList();
+            //loadPatientList();
         }
 
         public String getSelectedPatient() {
@@ -738,7 +755,7 @@ public class DoctorApplicationGUI extends JFrame {
             viewDiagnosisButton.addActionListener(e -> handleViewDiagnosisFiles());
 
             JButton backButton = new JButton("Back to Search");
-            backButton.addActionListener(e -> changeState("SEARCH_PATIENT"));
+            backButton.addActionListener(e -> handleBackToSearchPatientFromViewPatient());
 
             panel.add(viewDiagnosisButton);
             panel.add(backButton);
@@ -760,11 +777,12 @@ public class DoctorApplicationGUI extends JFrame {
             diagnosisModel.clear();
             if (patient.getDiagnosisList() != null && !patient.getDiagnosisList().isEmpty()) {
                 for (DiagnosisFile df : patient.getDiagnosisList()) {
-                    String diagnosisEntry = String.format("Date: %02d-%02d-%d | Diagnosis: %s",
-                            df.getDate().getDayOfMonth(),
-                            df.getDate().getMonth(),
-                            df.getDate().getYear(),
-                            df.getDiagnosis());
+                    String diagnosisEntry ="Date:"+
+                            df.getDate().getMonth()+
+                            df.getDate().getDayOfMonth()+
+                            df.getDate().getYear()+
+                            " | Diagnosis:"+
+                            df.getDiagnosis();
                     diagnosisModel.addElement(diagnosisEntry);
                 }
             } else {
@@ -1220,9 +1238,16 @@ public class DoctorApplicationGUI extends JFrame {
             @Override
             protected Void doInBackground() {
                 try {
+                    // Limpiar el buffer de entrada si hay datos disponibles
+                    if (socket.isClosed()) {
+                        System.out.println("socket closed");
+                    }
+
                     out.writeUTF("VIEW_PATIENT");
                     out.writeInt(Integer.parseInt(selectedPatient));
                     out.flush();
+
+
 
                     String resp = in.readUTF();
                     System.out.println("Server response: " + resp); // Debug
@@ -1727,6 +1752,7 @@ public class DoctorApplicationGUI extends JFrame {
     private void handleBackToMenuFromSearchPatient(){
         try {
             out.writeUTF("BACK_TO_MENU");
+            System.out.println();
             out.flush();
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -1734,6 +1760,18 @@ public class DoctorApplicationGUI extends JFrame {
         currentUsername = null;
         //cleanupResources();
         changeState("DOCTOR_MENU");
+    }
+
+    private void handleBackToSearchPatientFromViewPatient(){
+        try {
+            out.writeUTF("BACK_TO_SEARCH_PATIENT");
+            out.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        currentUsername = null;
+        //cleanupResources();
+        changeState("SEARCH_PATIENT");
     }
 
     private void handleViewDiagnosisFiles() {
