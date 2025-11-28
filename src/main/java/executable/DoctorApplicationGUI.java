@@ -60,6 +60,7 @@ public class DoctorApplicationGUI extends JFrame {
     private String currentUsername = null;
 
     // Datos de la sesión
+    private Patient currentPatient =  null;
     private String currentPatientInfo = null;
     private String currentDiagnosisFiles = null;
     private String currentRecordingData = null;
@@ -746,13 +747,13 @@ public class DoctorApplicationGUI extends JFrame {
             JPanel panel = new JPanel(new FlowLayout());
             panel.setBackground(new Color(171, 191, 234));
 
-            JButton viewDiagnosisButton = new JButton("View Diagnosis Files");
+            JButton viewDiagnosisButton = new JButton("View Diagnosis File");
             viewDiagnosisButton.setBackground(new Color(11, 87, 147));
             viewDiagnosisButton.setForeground(Color.WHITE);
             viewDiagnosisButton.setOpaque(true);
             viewDiagnosisButton.setBorderPainted(false);
             viewDiagnosisButton.setFocusPainted(false);
-            viewDiagnosisButton.addActionListener(e -> handleViewDiagnosisFiles());
+            viewDiagnosisButton.addActionListener(e -> handleViewDiagnosisFile());
 
             JButton backButton = new JButton("Back to Search");
             backButton.addActionListener(e -> handleBackToSearchPatientFromViewPatient());
@@ -789,28 +790,127 @@ public class DoctorApplicationGUI extends JFrame {
                 diagnosisModel.addElement("No diagnosis records found");
             }
         }
+
+        public int getSelectedDiagnosisIndex() {
+            return diagnosisList.getSelectedIndex();
+        }
+
     }
 
 
     // Panel de visualización de diagnóstico
     class ViewDiagnosisFilePanel extends JPanel {
-        private JList<String> diagnosisList;
-        private DefaultListModel<String> diagnosisModel;
+        // patient labels
+        private JLabel pNameLabel;
+        private JLabel pDobLabel;
+        private JLabel pHinLabel;
+        private JLabel pSexLabel;
+
+        // diagnosis labels
+        private JLabel symptomsLabel;
+        private JLabel diagnosisLabel;
+        private JLabel medicationLabel;
+        private JLabel dateLabel;
+        private int currentDiagnosisFileId = -1;
 
         public ViewDiagnosisFilePanel() {
             setLayout(new BorderLayout());
             setBackground(new Color(171, 191, 234));
             setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-            JLabel label = new JLabel("Diagnosis Files", JLabel.CENTER);
-            label.setFont(label.getFont().deriveFont(Font.BOLD, 22f));
-            add(label, BorderLayout.NORTH);
+            JLabel title = new JLabel("Diagnosis File", JLabel.CENTER);
+            title.setFont(title.getFont().deriveFont(Font.BOLD, 22f));
+            add(title, BorderLayout.NORTH);
 
-            diagnosisModel = new DefaultListModel<>();
-            diagnosisList = new JList<>(diagnosisModel);
-            diagnosisList.setBackground(new Color(200, 220, 240));
-            add(new JScrollPane(diagnosisList), BorderLayout.CENTER);
+            // Patient info panel (left)
+            JPanel patientPanel = new JPanel(new GridBagLayout());
+            patientPanel.setBackground(new Color(171, 191, 234));
+            patientPanel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createTitledBorder("Patient Information"),
+                    BorderFactory.createEmptyBorder(8, 8, 8, 8)
+            ));
+            GridBagConstraints pg = new GridBagConstraints();
+            pg.insets = new Insets(4,4,4,4);
+            pg.anchor = GridBagConstraints.WEST;
+            pg.gridx = 0; pg.gridy = 0;
+            patientPanel.add(new JLabel("Name:"), pg);
+            pg.gridx = 1;
+            pNameLabel = new JLabel("-");
+            pNameLabel.setFont(pNameLabel.getFont().deriveFont(Font.BOLD));
+            patientPanel.add(pNameLabel, pg);
 
+            pg.gridx = 0; pg.gridy++;
+            patientPanel.add(new JLabel("Date of Birth:"), pg);
+            pg.gridx = 1;
+            pDobLabel = new JLabel("-");
+            patientPanel.add(pDobLabel, pg);
+
+            pg.gridx = 0; pg.gridy++;
+            patientPanel.add(new JLabel("Insurance Number:"), pg);
+            pg.gridx = 1;
+            pHinLabel = new JLabel("-");
+            pHinLabel.setFont(pHinLabel.getFont().deriveFont(Font.BOLD));
+            patientPanel.add(pHinLabel, pg);
+
+
+            pg.gridx = 0; pg.gridy++;
+            patientPanel.add(new JLabel("Sex:"), pg);
+            pg.gridx = 1;
+            pSexLabel = new JLabel("-");
+            patientPanel.add(pSexLabel, pg);
+
+            // Diagnosis info panel (center/right)
+            JPanel infoPanel = new JPanel(new GridBagLayout());
+            infoPanel.setBackground(new Color(171, 191, 234));
+            GridBagConstraints g = new GridBagConstraints();
+            g.insets = new Insets(6, 6, 6, 6);
+            g.anchor = GridBagConstraints.WEST;
+            g.gridx = 0;
+            g.gridy = 0;
+
+            infoPanel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createTitledBorder("Selected Diagnosis Info"),
+                    BorderFactory.createEmptyBorder(8, 8, 8, 8)
+            ));
+
+            infoPanel.add(new JLabel("Symptoms:"), g);
+            g.gridx = 1;
+            symptomsLabel = new JLabel();
+            symptomsLabel.setFont(symptomsLabel.getFont().deriveFont(Font.BOLD));
+            infoPanel.add(symptomsLabel, g);
+
+            g.gridx = 0;
+            g.gridy++;
+            infoPanel.add(new JLabel("Diagnosis:"), g);
+            g.gridx = 1;
+            diagnosisLabel = new JLabel();
+            diagnosisLabel.setFont(diagnosisLabel.getFont().deriveFont(Font.BOLD));
+            infoPanel.add(diagnosisLabel, g);
+
+            g.gridx = 0;
+            g.gridy++;
+            infoPanel.add(new JLabel("Medication:"), g);
+            g.gridx = 1;
+            medicationLabel = new JLabel();
+            medicationLabel.setFont(medicationLabel.getFont().deriveFont(Font.BOLD));
+            infoPanel.add(medicationLabel, g);
+
+            g.gridx = 0;
+            g.gridy++;
+            infoPanel.add(new JLabel("Date:"), g);
+            g.gridx = 1;
+            dateLabel = new JLabel();
+            dateLabel.setFont(dateLabel.getFont().deriveFont(Font.BOLD));
+            infoPanel.add(dateLabel, g);
+
+            JPanel center = new JPanel(new BorderLayout(10,10));
+            center.setOpaque(false);
+            center.add(patientPanel, BorderLayout.NORTH);
+            center.add(infoPanel, BorderLayout.CENTER);
+
+            add(center, BorderLayout.CENTER);
+
+            // Bottom buttons
             JPanel buttonPanel = new JPanel(new FlowLayout());
             JButton viewRecordingButton = new JButton("View Recording");
             viewRecordingButton.setBackground(new Color(11, 87, 147));
@@ -834,40 +934,102 @@ public class DoctorApplicationGUI extends JFrame {
             buttonPanel.add(viewRecordingButton);
             buttonPanel.add(downloadButton);
             buttonPanel.add(backButton);
+
             add(buttonPanel, BorderLayout.SOUTH);
         }
 
-        public void setDiagnosisFiles(String files) {
-            diagnosisModel.clear();
-            if (files != null && !files.isEmpty()) {
-                // Parsear la lista de DiagnosisFile del formato toString()
-                String[] fileArray = files.split("MedicalRecord\\{");
-                for (String file : fileArray) {
-                    if (!file.trim().isEmpty()) {
-                        diagnosisModel.addElement("MedicalRecord{" + file.trim());
-                    }
-                }
-            }
-        }
 
-        public String getSelectedDiagnosis() {
-            return diagnosisList.getSelectedValue();
+        public void showDiagnosis(DiagnosisFile df, Patient p) {
+            try {
+                if (p != null) {
+                    pNameLabel.setText((p.getNamePatient() == null ? "-" : p.getNamePatient()) +
+                            " " + (p.getSurnamePatient() == null ? "" : p.getSurnamePatient()));
+                    if (p.getDobPatient() != null) {
+                        pDobLabel.setText(String.format("%02d-%02d-%d",
+                                p.getDobPatient().getDay(),
+                                p.getDobPatient().getMonth(),
+                                p.getDobPatient().getYear()));
+                    } else {
+                        pDobLabel.setText("-");
+                    }
+                    pHinLabel.setText(String.valueOf(p.getHealthInsuranceNumberPatient() == 0 ? "-" : p.getHealthInsuranceNumberPatient()));
+                    pSexLabel.setText(p.getSexPatient() == null ? "-" : p.getSexPatient().toString());
+                } else {
+                    pNameLabel.setText("-");
+                    pDobLabel.setText("-");
+                    pHinLabel.setText("-");
+                    pSexLabel.setText("-");
+                }
+            } catch (Throwable ignored) {
+                pNameLabel.setText("-");
+                pDobLabel.setText("-");
+                pHinLabel.setText("-");
+                pSexLabel.setText("-");
+            }
+
+
+            currentDiagnosisFileId = -1;
+            if (df == null) {
+                symptomsLabel.setText("-");
+                diagnosisLabel.setText("-");
+                medicationLabel.setText("-");
+                dateLabel.setText("-");
+                return;
+            }
+
+            try {
+                if (df.getSymptoms() != null && !df.getSymptoms().isEmpty()) {
+                    symptomsLabel.setText(String.join(", ", df.getSymptoms()));
+                } else {
+                    symptomsLabel.setText("None");
+                }
+            } catch (Throwable ignored) {
+                symptomsLabel.setText("None");
+            }
+
+            try {
+                diagnosisLabel.setText(df.getDiagnosis() == null ? "-" : df.getDiagnosis());
+            } catch (Throwable ignored) {
+                diagnosisLabel.setText("-");
+            }
+
+            try {
+                medicationLabel.setText(df.getMedication() == null ? "-" : df.getMedication());
+            } catch (Throwable ignored) {
+                medicationLabel.setText("-");
+            }
+
+            try {
+                if (df.getDate() != null) {
+                    Object d = df.getDate();
+                    if (d instanceof LocalDateTime) {
+                        LocalDateTime ldt = (LocalDateTime) d;
+                        dateLabel.setText(String.format("%02d-%02d-%04d", ldt.getDayOfMonth(), ldt.getMonthValue(), ldt.getYear()));
+                    } else if (d instanceof LocalDate) {
+                        LocalDate ld = (LocalDate) d;
+                        dateLabel.setText(String.format("%02d-%02d-%04d", ld.getDayOfMonth(), ld.getMonthValue(), ld.getYear()));
+                    } else {
+                        dateLabel.setText(d.toString());
+                    }
+                } else {
+                    dateLabel.setText("unknown");
+                }
+            } catch (Throwable ignored) {
+                dateLabel.setText("unknown");
+            }
+
+            try {
+                currentDiagnosisFileId = df.getId();
+            } catch (Throwable ignored) {
+                currentDiagnosisFileId = -1;
+            }
         }
 
         public int getSelectedDiagnosisId() {
-            String selected = getSelectedDiagnosis();
-            if (selected != null) {
-                // Extraer ID del formato: MedicalRecord{id='123', ...}
-                try {
-                    String idStr = selected.split("id='")[1].split("'")[0];
-                    return Integer.parseInt(idStr);
-                } catch (Exception e) {
-                    return -1;
-                }
-            }
-            return -1;
+            return currentDiagnosisFileId;
         }
     }
+
 
     // Panel de visualización de grabaciones
     class ViewRecordingPanel extends JPanel {
@@ -1224,6 +1386,7 @@ public class DoctorApplicationGUI extends JFrame {
 
     private void handleSelectPatient() {
         String selectedPatient = searchPatientPanel.getSelectedPatient();
+        System.out.println("The selected patient is:" + selectedPatient);
 
         if (selectedPatient == null || selectedPatient.equals("No patients available")) {
             JOptionPane.showMessageDialog(this, "Please select a patient", "Warning", JOptionPane.WARNING_MESSAGE);
@@ -1246,10 +1409,11 @@ public class DoctorApplicationGUI extends JFrame {
                     out.writeUTF("VIEW_PATIENT");
                     out.writeInt(Integer.parseInt(selectedPatient));
                     out.flush();
-
-
-
                     String resp = in.readUTF();
+                    System.out.println("selected patient sent to server");
+                    System.out.println(in.available());
+
+
                     System.out.println("Server response: " + resp); // Debug
 
                     if (!"PATIENT_OVERVIEW_SENT".equals(resp)) {
@@ -1273,6 +1437,7 @@ public class DoctorApplicationGUI extends JFrame {
                     }
 
                     this.patient = patients.get(0);
+                    currentPatient = patient;
                     debugPatientData(this.patient);// Tomar el primer paciente
                     if (this.patient == null) {
                         patientInfo = "Parsed patient is null";
@@ -1774,16 +1939,26 @@ public class DoctorApplicationGUI extends JFrame {
         changeState("SEARCH_PATIENT");
     }
 
-    private void handleViewDiagnosisFiles() {
-        // Asumimos que la información del paciente ya incluye los diagnósticos
-        // según la implementación del servidor en doSelectPatientAndShowInfo()
-        if (currentPatientInfo != null) {
-            viewDiagnosisFilePanel.setDiagnosisFiles(currentPatientInfo);
-            changeState("VIEW_DIAGNOSISFILE");
-        } else {
-            JOptionPane.showMessageDialog(this, "No patient information available", "Error", JOptionPane.ERROR_MESSAGE);
+    private void handleViewDiagnosisFile() {
+        if (currentPatient == null) {
+            JOptionPane.showMessageDialog(this, "No patient loaded", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
         }
+        int selectedIndex = viewPatientPanel.getSelectedDiagnosisIndex();
+        if (selectedIndex < 0) {
+            JOptionPane.showMessageDialog(this, "Please select a diagnosis from the list", "Warning", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (currentPatient.getDiagnosisList() == null || selectedIndex >= currentPatient.getDiagnosisList().size()) {
+            JOptionPane.showMessageDialog(this, "Selected diagnosis not available", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        DiagnosisFile chosen = currentPatient.getDiagnosisList().get(selectedIndex);
+        viewDiagnosisFilePanel.showDiagnosis(chosen, currentPatient);
+        changeState("VIEW_DIAGNOSISFILE");
     }
+
 
     private void handleViewRecording() {
         int diagnosisId = viewDiagnosisFilePanel.getSelectedDiagnosisId();
