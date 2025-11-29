@@ -1409,6 +1409,15 @@ public class DoctorApplicationGUI extends JFrame {
                     out.writeUTF("VIEW_PATIENT");
                     out.writeInt(Integer.parseInt(selectedPatient));
                     out.flush();
+
+                    String patientString = in.readUTF();
+                    System.out.println("Patient data received: " + patientString); // Debug
+
+                    if (patientString == null || patientString.isBlank()) {
+                        patientInfo = "Received empty patient data";
+                        return null;
+                    }
+
                     String resp = in.readUTF();
                     System.out.println("selected patient sent to server");
                     System.out.println(in.available());
@@ -1421,13 +1430,7 @@ public class DoctorApplicationGUI extends JFrame {
                         return null;
                     }
 
-                    String patientString = in.readUTF();
-                    System.out.println("Patient data received: " + patientString); // Debug
 
-                    if (patientString == null || patientString.isBlank()) {
-                        patientInfo = "Received empty patient data";
-                        return null;
-                    }
 
                     // Parsear el paciente
                     List<Patient> patients = parsePatientList(patientString);
