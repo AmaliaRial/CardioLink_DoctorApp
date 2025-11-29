@@ -2324,7 +2324,7 @@ public class DoctorApplicationGUI extends JFrame {
                     JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
                             message, "Success", JOptionPane.INFORMATION_MESSAGE);
                     changeState("RECENTLY_FINISH");
-                    recentlyFinishPanel.loadRecentlyFinished();
+
                 } else {
                     JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
                             message, "Error", JOptionPane.ERROR_MESSAGE);
