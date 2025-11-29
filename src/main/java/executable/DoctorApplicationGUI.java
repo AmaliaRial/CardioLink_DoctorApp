@@ -830,22 +830,25 @@ public class DoctorApplicationGUI extends JFrame {
                     BorderFactory.createEmptyBorder(8, 8, 8, 8)
             ));
             GridBagConstraints pg = new GridBagConstraints();
-            pg.insets = new Insets(4,4,4,4);
+            pg.insets = new Insets(4, 4, 4, 4);
             pg.anchor = GridBagConstraints.WEST;
-            pg.gridx = 0; pg.gridy = 0;
+            pg.gridx = 0;
+            pg.gridy = 0;
             patientPanel.add(new JLabel("Name:"), pg);
             pg.gridx = 1;
             pNameLabel = new JLabel("-");
             pNameLabel.setFont(pNameLabel.getFont().deriveFont(Font.BOLD));
             patientPanel.add(pNameLabel, pg);
 
-            pg.gridx = 0; pg.gridy++;
+            pg.gridx = 0;
+            pg.gridy++;
             patientPanel.add(new JLabel("Date of Birth:"), pg);
             pg.gridx = 1;
             pDobLabel = new JLabel("-");
             patientPanel.add(pDobLabel, pg);
 
-            pg.gridx = 0; pg.gridy++;
+            pg.gridx = 0;
+            pg.gridy++;
             patientPanel.add(new JLabel("Insurance Number:"), pg);
             pg.gridx = 1;
             pHinLabel = new JLabel("-");
@@ -853,7 +856,8 @@ public class DoctorApplicationGUI extends JFrame {
             patientPanel.add(pHinLabel, pg);
 
 
-            pg.gridx = 0; pg.gridy++;
+            pg.gridx = 0;
+            pg.gridy++;
             patientPanel.add(new JLabel("Sex:"), pg);
             pg.gridx = 1;
             pSexLabel = new JLabel("-");
@@ -903,7 +907,7 @@ public class DoctorApplicationGUI extends JFrame {
             dateLabel.setFont(dateLabel.getFont().deriveFont(Font.BOLD));
             infoPanel.add(dateLabel, g);
 
-            JPanel center = new JPanel(new BorderLayout(10,10));
+            JPanel center = new JPanel(new BorderLayout(10, 10));
             center.setOpaque(false);
             center.add(patientPanel, BorderLayout.NORTH);
             center.add(infoPanel, BorderLayout.CENTER);
@@ -938,7 +942,7 @@ public class DoctorApplicationGUI extends JFrame {
             add(buttonPanel, BorderLayout.SOUTH);
         }
 
-
+        /*
         public void showDiagnosis(DiagnosisFile df, Patient p) {
             try {
                 if (p != null) {
@@ -1028,10 +1032,76 @@ public class DoctorApplicationGUI extends JFrame {
         public int getSelectedDiagnosisId() {
             return currentDiagnosisFileId;
         }
+    }*/
+
+        public void showDiagnosis(DiagnosisFile df, Patient p) {
+
+            // Show patient info
+            if (p != null) {
+                pNameLabel.setText((p.getNamePatient() == null ? "-" : p.getNamePatient()) +
+                        " " + (p.getSurnamePatient() == null ? "" : p.getSurnamePatient()));
+                pDobLabel.setText(p.getDobPatient() == null ? "-" :
+                        String.format("%02d-%02d-%04d",
+                                p.getDobPatient().getDay(),
+                                p.getDobPatient().getMonth(),
+                                p.getDobPatient().getYear()));
+                pHinLabel.setText(p.getHealthInsuranceNumberPatient() == 0 ? "-" : String.valueOf(p.getHealthInsuranceNumberPatient()));
+                pSexLabel.setText(p.getSexPatient() == null ? "-" : p.getSexPatient().toString());
+            } else {
+                pNameLabel.setText("-");
+                pDobLabel.setText("-");
+                pHinLabel.setText("-");
+                pSexLabel.setText("-");
+            }
+
+            if (df == null) {
+                symptomsLabel.setText("-");
+                diagnosisLabel.setText("-");
+                medicationLabel.setText("-");
+                dateLabel.setText("-");
+                return;
+            }
+
+            // Symptoms
+            symptomsLabel.setText(
+                    (df.getSymptoms() == null || df.getSymptoms().isEmpty())
+                            ? "None"
+                            : String.join(", ", df.getSymptoms())
+            );
+
+            // Diagnosis (multi-line neatly displayed)
+            diagnosisLabel.setText(
+                    df.getDiagnosis() == null ? "-" :
+                            "<html>" + df.getDiagnosis().replace("\n", "<br>") + "</html>"
+            );
+
+            // Medication (clean)
+            medicationLabel.setText(
+                    df.getMedication() == null ? "-" : df.getMedication()
+            );
+
+            // Date
+            if (df.getDate() != null) {
+                if (df.getDate() instanceof LocalDate ld) {
+                    dateLabel.setText(String.format("%02d-%02d-%04d",
+                            ld.getDayOfMonth(), ld.getMonthValue(), ld.getYear()));
+                } else {
+                    dateLabel.setText(df.getDate().toString());
+                }
+            } else {
+                dateLabel.setText("unknown");
+            }
+
+            currentDiagnosisFileId = df.getId();
+        }
+        public int getSelectedDiagnosisId() {
+            return currentDiagnosisFileId;
+        }
     }
 
 
-    // Panel de visualización de grabaciones
+
+        // Panel de visualización de grabaciones
     class ViewRecordingPanel extends JPanel {
         private JTextArea recordingView;
         private JLabel stateLabel;
@@ -1072,7 +1142,7 @@ public class DoctorApplicationGUI extends JFrame {
             downloadButton.addActionListener(e -> handleDownloadRecording());
 
             JButton backButton = new JButton("Back to Diagnosis");
-            backButton.addActionListener(e -> changeState("VIEW_DIAGNOSISFILE"));
+            backButton.addActionListener(e -> handleBackToViewPatientFromViewDiagnosisFile());
 
             buttonPanel.add(prevFragmentButton);
             buttonPanel.add(nextFragmentButton);
@@ -1104,7 +1174,7 @@ public class DoctorApplicationGUI extends JFrame {
             setBackground(new Color(171, 191, 234));
             setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-            JLabel label = new JLabel("Recently Finished Diagnoses", JLabel.CENTER);
+            JLabel label = new JLabel("Diagnosis To Complete", JLabel.CENTER);
             label.setFont(label.getFont().deriveFont(Font.BOLD, 22f));
             add(label, BorderLayout.NORTH);
 
@@ -1170,21 +1240,18 @@ public class DoctorApplicationGUI extends JFrame {
                         if ("RECENTLY_FINISH_LIST".equals(response)) {
                             recentData = in.readUTF();
                         }*/
-                        String response = in.readUTF();
-                        if ("RECENTLY_FINISH_LIST".equals(response)) {
-                            StringBuilder sb = new StringBuilder();
-                            while (true) {
-                                String line = in.readUTF();
-                                if ("RECENTLY_FINISHED".equals(line)) {
-                                    break; // end of list from server
-                                }
-                                if (sb.length() > 0) sb.append(" ");
-                                sb.append(line);
+
+                        StringBuilder sb = new StringBuilder();
+                        while (true) {
+                            String line = in.readUTF();
+                            if ("RECENTLY_FINISHED".equals(line)) {
+                                break; // end of list from server
                             }
-                            recentData = sb.toString();
-                        } else {
-                            recentData = "Error: unexpected response " + response;
+                            if (sb.length() > 0) sb.append(" ");
+                            sb.append(line);
                         }
+                        recentData = sb.toString();
+
                     } catch (IOException ex) {
                         recentData = "Error loading recent diagnoses";
                     }
@@ -1214,6 +1281,7 @@ public class DoctorApplicationGUI extends JFrame {
     class CompleteDiagnosisFilePanel extends JPanel {
         private JTextArea diagnosisText;
 
+
         public CompleteDiagnosisFilePanel() {
             setLayout(new BorderLayout());
             setBackground(new Color(171, 191, 234));
@@ -1224,10 +1292,12 @@ public class DoctorApplicationGUI extends JFrame {
             add(label, BorderLayout.NORTH);
 
             diagnosisText = new JTextArea(15, 50);
-            diagnosisText.setText("Enter diagnosis details here...\n\nObservations:\n\nTreatment Plan:\n\nMedications:\n\nFollow-up:");
+            diagnosisText.setText("Please enter Diagnosis information.\n\nObservations:\n\nTreatment Plan:\n\nMedications\n\nFollow-up::");
             diagnosisText.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
             diagnosisText.setLineWrap(true);
             diagnosisText.setWrapStyleWord(true);
+
+
 
             add(new JScrollPane(diagnosisText), BorderLayout.CENTER);
 
@@ -1255,6 +1325,8 @@ public class DoctorApplicationGUI extends JFrame {
         public void setDiagnosisText(String text) {
             diagnosisText.setText(text);
         }
+
+
     }
 
     // -----------------------
@@ -1971,6 +2043,27 @@ public class DoctorApplicationGUI extends JFrame {
         changeState("DOCTOR_MENU");
     }
 
+    // Back from COMPLETE_DIAGNOSISFILE to RECENTLY_FINISH
+    private void handleBackToRecentlyFinishFromComplete() {
+        try {
+            out.writeUTF("BACK_TO_MENU");   // server: COMPLETE_DIAGNOSISFILE -> RECENTLY_FINISH
+            out.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        changeState("DOCTOR_MENU");
+    }
+
+    private void handleBackToViewPatientFromViewDiagnosisFile() {
+        try {
+            out.writeUTF("BACK_TO_MENU");
+            out.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        changeState("VIEW_PATIENT");
+    }
+
     private void handleViewDiagnosisFile() {
         if (currentPatient == null) {
             JOptionPane.showMessageDialog(this, "No patient loaded", "Error", JOptionPane.ERROR_MESSAGE);
@@ -2182,16 +2275,21 @@ public class DoctorApplicationGUI extends JFrame {
         }
 
         currentDiagnosisFileId = diagnosisId;
-        completeDiagnosisFilePanel.setDiagnosisText("Enter diagnosis details for file ID: " + diagnosisId + "\n\nObservations:\n\nTreatment Plan:\n\nMedications:\n\nFollow-up:");
+        completeDiagnosisFilePanel.setDiagnosisText("\n\nObservations:\n\nTreatment Plan:\n\nMedications:\n\nFollow-up:");
         changeState("COMPLETE_DIAGNOSISFILE");
     }
 
     private void handleSaveDiagnosis() {
         String diagnosis = completeDiagnosisFilePanel.getDiagnosisText();
+
         if (diagnosis.isBlank()) {
             JOptionPane.showMessageDialog(this, "Please enter diagnosis details", "Warning", JOptionPane.WARNING_MESSAGE);
             return;
         }
+
+        DiagnosisParts parts = parseDiagnosisText(diagnosis);
+
+        String finalDiagnosisText = formatDiagnosisForStorage(parts);
 
         new SwingWorker<Void, Void>() {
             private boolean success = false;
@@ -2202,7 +2300,9 @@ public class DoctorApplicationGUI extends JFrame {
                 try {
                     out.writeUTF("COMPLETE_DIAGNOSISFILE");
                     out.writeUTF(String.valueOf(currentDiagnosisFileId));
-                    out.writeUTF(diagnosis);
+                    System.out.println(finalDiagnosisText);
+                    out.writeUTF(finalDiagnosisText);
+                    out.writeUTF(parts.medications);  //to store the medications separately
                     out.flush();
 
                     String response = in.readUTF();
@@ -2224,6 +2324,7 @@ public class DoctorApplicationGUI extends JFrame {
                     JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
                             message, "Success", JOptionPane.INFORMATION_MESSAGE);
                     changeState("RECENTLY_FINISH");
+                    recentlyFinishPanel.loadRecentlyFinished();
                 } else {
                     JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
                             message, "Error", JOptionPane.ERROR_MESSAGE);
@@ -2255,6 +2356,49 @@ public class DoctorApplicationGUI extends JFrame {
             JOptionPane.showMessageDialog(this, "Error saving file: " + ex.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    public static class DiagnosisParts {
+        public String observations = "";
+        public String treatmentPlan = "";
+        public String medications = "";
+        public String followUp = "";
+    }
+
+    public static DiagnosisParts parseDiagnosisText(String fullText) {
+        DiagnosisParts parts = new DiagnosisParts();
+
+        // Normalize
+        String text = fullText.replace("\r", "");
+
+        // Split into blocks based on labels
+        String[] obsSplit = text.split("Observations:", 2);
+        if (obsSplit.length < 2) return parts;
+        String[] planSplit = obsSplit[1].split("Treatment Plan:", 2);
+
+        parts.observations = planSplit[0].trim();
+
+        if (planSplit.length < 2) return parts;
+        String[] medSplit = planSplit[1].split("Medications:", 2);
+
+        parts.treatmentPlan = medSplit[0].trim();
+
+        if (medSplit.length < 2) return parts;
+        String[] followSplit = medSplit[1].split("Follow-up:", 2);
+
+        parts.medications = followSplit[0].trim();
+
+        if (followSplit.length < 2) return parts;
+        parts.followUp = followSplit[1].trim();
+
+        return parts;
+    }
+
+    public static String formatDiagnosisForStorage(DiagnosisParts p) {
+        return
+                "Observations:\n    " + p.observations + "\n\n" +
+                        "Treatment Plan:\n    " + p.treatmentPlan + "\n\n" +
+                        "Follow-up:\n    " + p.followUp;
     }
 
     // -----------------------
