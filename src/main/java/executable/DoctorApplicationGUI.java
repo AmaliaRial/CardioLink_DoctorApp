@@ -1127,7 +1127,7 @@ public class DoctorApplicationGUI extends JFrame {
             refreshButton.addActionListener(e -> loadRecentlyFinished());
 
             JButton backButton = new JButton("Back to Menu");
-            backButton.addActionListener(e -> changeState("DOCTOR_MENU"));
+            backButton.addActionListener(e -> handleBackToMenuFromLoadRecentlyFinished());
 
             buttonPanel.add(completeButton);
             buttonPanel.add(refreshButton);
@@ -1135,7 +1135,7 @@ public class DoctorApplicationGUI extends JFrame {
             add(buttonPanel, BorderLayout.SOUTH);
 
             // Cargar lista al inicializar
-            loadRecentlyFinished();
+            //loadRecentlyFinished();
         }
 
         public String getSelectedDiagnosis() {
@@ -1165,9 +1165,25 @@ public class DoctorApplicationGUI extends JFrame {
                     try {
                         out.writeUTF("RECENTLY_FINISH");
                         out.flush();
-                        String response = in.readUTF();
+
+                        /*String response = in.readUTF();
                         if ("RECENTLY_FINISH_LIST".equals(response)) {
                             recentData = in.readUTF();
+                        }*/
+                        String response = in.readUTF();
+                        if ("RECENTLY_FINISH_LIST".equals(response)) {
+                            StringBuilder sb = new StringBuilder();
+                            while (true) {
+                                String line = in.readUTF();
+                                if ("RECENTLY_FINISHED".equals(line)) {
+                                    break; // end of list from server
+                                }
+                                if (sb.length() > 0) sb.append(" ");
+                                sb.append(line);
+                            }
+                            recentData = sb.toString();
+                        } else {
+                            recentData = "Error: unexpected response " + response;
                         }
                     } catch (IOException ex) {
                         recentData = "Error loading recent diagnoses";
@@ -1942,6 +1958,19 @@ public class DoctorApplicationGUI extends JFrame {
         changeState("SEARCH_PATIENT");
     }
 
+    private void handleBackToMenuFromLoadRecentlyFinished(){
+        try {
+            out.writeUTF("BACK_TO_MENU");
+            System.out.println();
+            out.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        currentUsername = null;
+        //cleanupResources();
+        changeState("DOCTOR_MENU");
+    }
+
     private void handleViewDiagnosisFile() {
         if (currentPatient == null) {
             JOptionPane.showMessageDialog(this, "No patient loaded", "Error", JOptionPane.ERROR_MESSAGE);
@@ -2141,6 +2170,7 @@ public class DoctorApplicationGUI extends JFrame {
     }
 
     private void handleRecentlyFinish() {
+        recentlyFinishPanel.loadRecentlyFinished();
         changeState("RECENTLY_FINISH");
     }
 
@@ -2158,7 +2188,7 @@ public class DoctorApplicationGUI extends JFrame {
 
     private void handleSaveDiagnosis() {
         String diagnosis = completeDiagnosisFilePanel.getDiagnosisText();
-        if (diagnosis.isBlank() || diagnosis.contains("Enter diagnosis details")) {
+        if (diagnosis.isBlank()) {
             JOptionPane.showMessageDialog(this, "Please enter diagnosis details", "Warning", JOptionPane.WARNING_MESSAGE);
             return;
         }
