@@ -769,10 +769,18 @@ public class DoctorApplicationGUI extends JFrame {
         public void setPatientInfo(Patient patient) {
             // Actualizar información del paciente
             nameLabel.setText(patient.getNamePatient() + " " + patient.getSurnamePatient());
-            dobLabel.setText(String.format("%02d-%02d-%d",
-                    patient.getDobPatient().getDay(),
-                    patient.getDobPatient().getMonth(),
-                    patient.getDobPatient().getYear()));
+            if (patient.getDobPatient() != null) {
+                java.time.LocalDate ld = patient.getDobPatient().toInstant()
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDate();
+                dobLabel.setText(String.format("%02d-%02d-%04d",
+                        ld.getDayOfMonth(),
+                        ld.getMonthValue(),
+                        ld.getYear()));
+            } else {
+                dobLabel.setText("-");
+            }
+
             hinLabel.setText(String.valueOf(patient.getHealthInsuranceNumberPatient()));
             sexLabel.setText(patient.getSexPatient().toString());
 
@@ -1042,11 +1050,18 @@ public class DoctorApplicationGUI extends JFrame {
             if (p != null) {
                 pNameLabel.setText((p.getNamePatient() == null ? "-" : p.getNamePatient()) +
                         " " + (p.getSurnamePatient() == null ? "" : p.getSurnamePatient()));
-                pDobLabel.setText(p.getDobPatient() == null ? "-" :
-                        String.format("%02d-%02d-%04d",
-                                p.getDobPatient().getDay(),
-                                p.getDobPatient().getMonth(),
-                                p.getDobPatient().getYear()));
+                if (p.getDobPatient() != null) {
+                    java.time.LocalDate ld = p.getDobPatient().toInstant()
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDate();
+                    pDobLabel.setText(String.format("%02d-%02d-%04d",
+                            ld.getDayOfMonth(),
+                            ld.getMonthValue(),
+                            ld.getYear()));
+                } else {
+                    pDobLabel.setText("-");
+                }
+
                 pHinLabel.setText(p.getHealthInsuranceNumberPatient() == 0 ? "-" : String.valueOf(p.getHealthInsuranceNumberPatient()));
                 pSexLabel.setText(p.getSexPatient() == null ? "-" : p.getSexPatient().toString());
             } else {
@@ -1553,11 +1568,18 @@ public class DoctorApplicationGUI extends JFrame {
             if (p != null) {
                 pNameLabel.setText((p.getNamePatient() == null ? "-" : p.getNamePatient()) +
                         " " + (p.getSurnamePatient() == null ? "" : p.getSurnamePatient()));
-                pDobLabel.setText(p.getDobPatient() == null ? "-" :
-                        String.format("%02d-%02d-%04d",
-                                p.getDobPatient().getDay(),
-                                p.getDobPatient().getMonth(),
-                                p.getDobPatient().getYear()));
+                java.util.Date dob = p.getDobPatient();
+                if (dob != null) {
+                    java.time.LocalDate ld = dob.toInstant()
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDate();
+                    pDobLabel.setText(String.format("%02d-%02d-%04d",
+                            ld.getDayOfMonth(),
+                            ld.getMonthValue(),
+                            ld.getYear()));
+                } else {
+                    pDobLabel.setText("-");
+                }
                 pHinLabel.setText(p.getHealthInsuranceNumberPatient() == 0 ? "-" : String.valueOf(p.getHealthInsuranceNumberPatient()));
                 pSexLabel.setText(p.getSexPatient() == null ? "-" : p.getSexPatient().toString());
             } else {
