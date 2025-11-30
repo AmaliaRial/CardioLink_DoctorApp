@@ -1,5 +1,6 @@
 package executable;
 
+import common.enums.Sex;
 import pojos.DiagnosisFile;
 import pojos.Patient;
 
@@ -13,6 +14,7 @@ import java.lang.reflect.Method;
 import java.net.Socket;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.List;
@@ -1290,19 +1292,66 @@ public class DoctorApplicationGUI extends JFrame {
             return recentList.getSelectedValue();
         }
 
-        public int getSelectedDiagnosisId() {
+        public DiagnosisFile getSelectedDiagnosisFile() {
             String selected = getSelectedDiagnosis();
+            System.out.println(selected);
+
             if (selected != null) {
-                // Extraer ID del formato: MedicalRecord{id='123', ...}
                 try {
+                    // Crear un nuevo objeto DiagnosisFile
+                    DiagnosisFile diagnosisFile = new DiagnosisFile();
+
+                    // Extraer y asignar el ID
                     String idStr = selected.split("id='")[1].split("'")[0];
-                    return Integer.parseInt(idStr);
+                    diagnosisFile.setId(Integer.parseInt(idStr));
+
+                    // Extraer y asignar los síntomas (convertir a ArrayList)
+                    String symptomsStr = selected.split("symptoms='")[1].split("'")[0];
+                    ArrayList<String> symptomsList = new ArrayList<>();
+                    if (!symptomsStr.equals("null")) {
+                        String[] symptomsArray = symptomsStr.split(", ");
+                        for (String symptom : symptomsArray) {
+                            symptomsList.add(symptom);
+                        }
+                    }
+                    diagnosisFile.setSymptoms(symptomsList);
+
+                    // Extraer y asignar el diagnóstico
+                    String diagnosisStr = selected.split("diagnosis='")[1].split("'")[0];
+                    diagnosisFile.setDiagnosis(diagnosisStr.equals("null") ? null : diagnosisStr);
+
+                    // Extraer y asignar la medicación
+                    String medicationStr = selected.split("medication='")[1].split("'")[0];
+                    diagnosisFile.setMedication(medicationStr.equals("null") ? null : medicationStr);
+
+                    // Extraer y asignar la fecha
+                    String dateStr = selected.split("date=")[1].split("'")[0];
+                    diagnosisFile.setDate(LocalDate.parse(dateStr));
+
+                    // Extraer y asignar el patientId
+                    String patientIdStr = selected.split("patient id=")[1].split("'")[0];
+                    diagnosisFile.setPatientId(Integer.parseInt(patientIdStr));
+
+                    // Extraer y asignar el status
+                    String statusStr = selected.split("status=")[1].split("'")[0];
+                    diagnosisFile.setStatus(Boolean.parseBoolean(statusStr));
+
+                    // Los campos sensorDataECG y sensorDataEDA no están en el string,
+                    // así que los dejamos como null o valores por defecto
+                    diagnosisFile.setSensorDataECG(null);
+                    diagnosisFile.setSensorDataEDA(null);
+
+                    return diagnosisFile;
+
                 } catch (Exception e) {
-                    return -1;
+                    e.printStackTrace();
+                    return null;
                 }
             }
-            return -1;
+            return null;
         }
+
+
 
         private void loadRecentlyFinished() {
             new SwingWorker<Void, Void>() {
@@ -1356,47 +1405,131 @@ public class DoctorApplicationGUI extends JFrame {
     }
 
     // Panel de completar diagnóstico
-    class CompleteDiagnosisFilePanel extends JPanel {
-        private JTextArea diagnosisText;
-
+    public class CompleteDiagnosisFilePanel extends JPanel {
+        private JLabel pNameLabel, pDobLabel, pHinLabel, pSexLabel;
+        private JLabel symptomsLabel, dateLabel;
+        private JTextArea diagnosisTextArea, medicationTextArea;
+        private int currentDiagnosisFileId;
 
         public CompleteDiagnosisFilePanel() {
             setLayout(new BorderLayout());
             setBackground(new Color(171, 191, 234));
             setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-            JLabel label = new JLabel("Complete Diagnosis Report", JLabel.CENTER);
-            label.setFont(label.getFont().deriveFont(Font.BOLD, 22f));
-            add(label, BorderLayout.NORTH);
+            JLabel title = new JLabel("Complete Diagnosis", JLabel.CENTER);
+            title.setFont(title.getFont().deriveFont(Font.BOLD, 22f));
+            add(title, BorderLayout.NORTH);
 
-            diagnosisText = new JTextArea(15, 50);
-            diagnosisText.setText("Please enter Diagnosis information.\n\nObservations:\n\nTreatment Plan:\n\nMedications\n\nFollow-up::");
-            diagnosisText.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-            diagnosisText.setLineWrap(true);
-            diagnosisText.setWrapStyleWord(true);
+            // Patient info panel (left) - Mismo formato que el panel de visualización
+            JPanel patientPanel = new JPanel(new GridBagLayout());
+            patientPanel.setBackground(new Color(171, 191, 234));
+            patientPanel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createTitledBorder("Patient Information"),
+                    BorderFactory.createEmptyBorder(8, 8, 8, 8)
+            ));
+            GridBagConstraints pg = new GridBagConstraints();
+            pg.insets = new Insets(4, 4, 4, 4);
+            pg.anchor = GridBagConstraints.WEST;
+            pg.gridx = 0;
+            pg.gridy = 0;
+            patientPanel.add(new JLabel("Name:"), pg);
+            pg.gridx = 1;
+            pNameLabel = new JLabel("-");
+            pNameLabel.setFont(pNameLabel.getFont().deriveFont(Font.BOLD));
+            patientPanel.add(pNameLabel, pg);
 
+            pg.gridx = 0;
+            pg.gridy++;
+            patientPanel.add(new JLabel("Date of Birth:"), pg);
+            pg.gridx = 1;
+            pDobLabel = new JLabel("-");
+            patientPanel.add(pDobLabel, pg);
 
+            pg.gridx = 0;
+            pg.gridy++;
+            patientPanel.add(new JLabel("Insurance Number:"), pg);
+            pg.gridx = 1;
+            pHinLabel = new JLabel("-");
+            pHinLabel.setFont(pHinLabel.getFont().deriveFont(Font.BOLD));
+            patientPanel.add(pHinLabel, pg);
 
-            add(new JScrollPane(diagnosisText), BorderLayout.CENTER);
+            pg.gridx = 0;
+            pg.gridy++;
+            patientPanel.add(new JLabel("Sex:"), pg);
+            pg.gridx = 1;
+            pSexLabel = new JLabel("-");
+            patientPanel.add(pSexLabel, pg);
 
-            // LEFT SIDE – SYMPTOMS box
-            JTextArea symptomsArea = new JTextArea();
-            symptomsArea.setEditable(false);
-            symptomsArea.setLineWrap(true);
-            symptomsArea.setWrapStyleWord(true);
-            JScrollPane symptomsScroll = new JScrollPane(symptomsArea);
-            symptomsScroll.setPreferredSize(new Dimension(300, 200));
+            // Diagnosis info panel (center/right) - Con áreas de texto editables
+            JPanel infoPanel = new JPanel(new GridBagLayout());
+            infoPanel.setBackground(new Color(171, 191, 234));
+            GridBagConstraints g = new GridBagConstraints();
+            g.insets = new Insets(6, 6, 6, 6);
+            g.anchor = GridBagConstraints.WEST;
+            g.gridx = 0;
+            g.gridy = 0;
 
-            // BUTTON to open recording viewer
-            JButton viewRecordingButton = new JButton("View Recording");
-            viewRecordingButton.addActionListener(e -> handleViewRecording());
+            infoPanel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createTitledBorder("Complete Diagnosis Information"),
+                    BorderFactory.createEmptyBorder(8, 8, 8, 8)
+            ));
 
-            // Add to layout
-            add(symptomsScroll, BorderLayout.WEST);
-            add(viewRecordingButton, BorderLayout.EAST);
+            infoPanel.add(new JLabel("Symptoms:"), g);
+            g.gridx = 1;
+            symptomsLabel = new JLabel();
+            symptomsLabel.setFont(symptomsLabel.getFont().deriveFont(Font.BOLD));
+            infoPanel.add(symptomsLabel, g);
 
+            g.gridx = 0;
+            g.gridy++;
+            infoPanel.add(new JLabel("Diagnosis:"), g);
+            g.gridx = 1;
+            // Usamos JTextArea para el diagnóstico editable
+            diagnosisTextArea = new JTextArea(4, 30);
+            diagnosisTextArea.setLineWrap(true);
+            diagnosisTextArea.setWrapStyleWord(true);
+            diagnosisTextArea.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+            JScrollPane diagnosisScrollPane = new JScrollPane(diagnosisTextArea);
+            infoPanel.add(diagnosisScrollPane, g);
 
+            g.gridx = 0;
+            g.gridy++;
+            infoPanel.add(new JLabel("Medication:"), g);
+            g.gridx = 1;
+            // Usamos JTextArea para la medicación editable
+            medicationTextArea = new JTextArea(3, 30);
+            medicationTextArea.setLineWrap(true);
+            medicationTextArea.setWrapStyleWord(true);
+            medicationTextArea.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+            JScrollPane medicationScrollPane = new JScrollPane(medicationTextArea);
+            infoPanel.add(medicationScrollPane, g);
+
+            g.gridx = 0;
+            g.gridy++;
+            infoPanel.add(new JLabel("Date:"), g);
+            g.gridx = 1;
+            dateLabel = new JLabel();
+            dateLabel.setFont(dateLabel.getFont().deriveFont(Font.BOLD));
+            infoPanel.add(dateLabel, g);
+
+            JPanel center = new JPanel(new BorderLayout(10, 10));
+            center.setOpaque(false);
+            center.add(patientPanel, BorderLayout.NORTH);
+            center.add(infoPanel, BorderLayout.CENTER);
+
+            add(center, BorderLayout.CENTER);
+
+            // Bottom buttons - Modificados según tus requerimientos
             JPanel buttonPanel = new JPanel(new FlowLayout());
+
+            JButton showRecordingButton = new JButton("Show Recording");
+            showRecordingButton.setBackground(new Color(11, 87, 147));
+            showRecordingButton.setForeground(Color.WHITE);
+            showRecordingButton.setOpaque(true);
+            showRecordingButton.setBorderPainted(false);
+            showRecordingButton.setFocusPainted(false);
+            showRecordingButton.addActionListener(e -> handleViewRecording());
+
             JButton saveButton = new JButton("Save Diagnosis");
             saveButton.setBackground(new Color(46, 204, 113));
             saveButton.setForeground(Color.WHITE);
@@ -1405,23 +1538,71 @@ public class DoctorApplicationGUI extends JFrame {
             saveButton.setFocusPainted(false);
             saveButton.addActionListener(e -> handleSaveDiagnosis());
 
-            JButton backButton = new JButton("Back to Recently Finished");
+            JButton backButton = new JButton("Back");
             backButton.addActionListener(e -> changeState("RECENTLY_FINISH"));
 
+            buttonPanel.add(showRecordingButton);
             buttonPanel.add(saveButton);
             buttonPanel.add(backButton);
+
             add(buttonPanel, BorderLayout.SOUTH);
         }
 
-        public String getDiagnosisText() {
-            return diagnosisText.getText().trim();
+        public void showDiagnosisForEditing(DiagnosisFile df, Patient p) {
+            // Mostrar información del paciente (igual que en el otro panel)
+            if (p != null) {
+                pNameLabel.setText((p.getNamePatient() == null ? "-" : p.getNamePatient()) +
+                        " " + (p.getSurnamePatient() == null ? "" : p.getSurnamePatient()));
+                pDobLabel.setText(p.getDobPatient() == null ? "-" :
+                        String.format("%02d-%02d-%04d",
+                                p.getDobPatient().getDay(),
+                                p.getDobPatient().getMonth(),
+                                p.getDobPatient().getYear()));
+                pHinLabel.setText(p.getHealthInsuranceNumberPatient() == 0 ? "-" : String.valueOf(p.getHealthInsuranceNumberPatient()));
+                pSexLabel.setText(p.getSexPatient() == null ? "-" : p.getSexPatient().toString());
+            } else {
+                pNameLabel.setText("-");
+                pDobLabel.setText("-");
+                pHinLabel.setText("-");
+                pSexLabel.setText("-");
+            }
+
+            if (df == null) {
+                symptomsLabel.setText("-");
+                diagnosisTextArea.setText("");
+                medicationTextArea.setText("");
+                dateLabel.setText("-");
+                currentDiagnosisFileId = -1;
+                return;
+            }
+
+            // Síntomas (solo lectura)
+            symptomsLabel.setText(
+                    (df.getSymptoms() == null || df.getSymptoms().isEmpty())
+                            ? "None"
+                            : String.join(", ", df.getSymptoms())
+            );
+
+            // Diagnóstico (editable)
+            diagnosisTextArea.setText(df.getDiagnosis() == null ? "" : df.getDiagnosis());
+
+            // Medicación (editable)
+            medicationTextArea.setText(df.getMedication() == null ? "" : df.getMedication());
+
+            // Fecha
+            if (df.getDate() != null) {
+                if (df.getDate() instanceof LocalDate ld) {
+                    dateLabel.setText(String.format("%02d-%02d-%04d",
+                            ld.getDayOfMonth(), ld.getMonthValue(), ld.getYear()));
+                } else {
+                    dateLabel.setText(df.getDate().toString());
+                }
+            } else {
+                dateLabel.setText("unknown");
+            }
+
+            currentDiagnosisFileId = df.getId();
         }
-
-        public void setDiagnosisText(String text) {
-            diagnosisText.setText(text);
-        }
-
-
     }
 
     // -----------------------
@@ -2363,70 +2544,85 @@ public class DoctorApplicationGUI extends JFrame {
     }
 
     private void handleCompleteDiagnosis() {
-        int dfId = recentlyFinishPanel.getSelectedDiagnosisId();
+        DiagnosisFile df = recentlyFinishPanel.getSelectedDiagnosisFile();
+        int dfId= df.getId();
+        System.out.println(dfId);
+        currentDiagnosisFileId=dfId;
         if (dfId == -1) {
             JOptionPane.showMessageDialog(this, "Please select a diagnosis to complete", "Warning", JOptionPane.WARNING_MESSAGE);
             return;
         }
+        try {
+            out.writeUTF("COMPLETE_DIAGNOSISFILE");
+            out.writeInt(dfId);
+            out.flush();
+            String patinetDFString= in.readUTF();
 
-        currentDiagnosisFileId = dfId;
-        completeDiagnosisFilePanel.setDiagnosisText("\n\nObservations:\n\nTreatment Plan:\n\nMedications:\n\nFollow-up:");
+            String[] datos = patinetDFString.split(",");
+
+            String name = datos[0];
+            String surname = datos[1];
+
+
+            LocalDateTime dofLDT = LocalDate.parse(datos[2]).atStartOfDay();
+            Date dob = Date.from(dofLDT.atZone(ZoneId.systemDefault()).toInstant());
+            int hin = Integer.parseInt(datos[3]);
+            Sex sex = Sex.valueOf(datos[4]);
+
+            Patient patientDF= new Patient(name, surname, dob, sex, hin);
+            currentPatient=patientDF;
+
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+
+
+        completeDiagnosisFilePanel.showDiagnosisForEditing(df, currentPatient);
+
+
         changeState("COMPLETE_DIAGNOSISFILE");
     }
 
     private void handleSaveDiagnosis() {
-        String diagnosis = completeDiagnosisFilePanel.getDiagnosisText();
-
-        if (diagnosis.isBlank()) {
-            JOptionPane.showMessageDialog(this, "Please enter diagnosis details", "Warning", JOptionPane.WARNING_MESSAGE);
+        if (currentDiagnosisFileId == -1) {
+            JOptionPane.showMessageDialog(this, "No diagnosis file selected", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        DiagnosisParts parts = parseDiagnosisText(diagnosis);
+        String diagnosis = completeDiagnosisFilePanel.diagnosisTextArea.getText().trim();
+        String medication = completeDiagnosisFilePanel.medicationTextArea.getText().trim();
 
-        String finalDiagnosisText = formatDiagnosisForStorage(parts);
+        if (diagnosis.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please enter a diagnosis", "Warning", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
-        new SwingWorker<Void, Void>() {
-            private boolean success = false;
-            private String message = null;
+        // Enviar al servidor
+        try {
 
-            @Override
-            protected Void doInBackground() {
-                try {
-                    out.writeUTF("COMPLETE_DIAGNOSISFILE");
-                    out.writeUTF(String.valueOf(currentDiagnosisFileId));
-                    System.out.println(finalDiagnosisText);
-                    out.writeUTF(finalDiagnosisText);
-                    out.writeUTF(parts.medications);  //to store the medications separately
-                    out.flush();
+            // Enviar comando COMPLETE_DIAGNOSISFILE
 
-                    String response = in.readUTF();
-                    if ("COMPLETE_DIAGNOSISFILE_SAVED".equals(response)) {
-                        success = true;
-                        message = "Diagnosis saved successfully";
-                    } else {
-                        message = "Server error: " + response;
-                    }
-                } catch (IOException ex) {
-                    message = "Error saving diagnosis: " + ex.getMessage();
-                }
-                return null;
+            out.writeUTF(diagnosis);
+            out.writeUTF(medication);
+            out.flush();
+
+            // Recibir confirmación
+            String response = in.readUTF();
+            if ("COMPLETE_DIAGNOSISFILE_SAVED".equals(response)) {
+                JOptionPane.showMessageDialog(this, "Diagnosis saved successfully", "Success", JOptionPane.INFORMATION_MESSAGE);
+                changeState("RECENTLY_FINISH");
+            } else {
+                JOptionPane.showMessageDialog(this, "Error saving diagnosis", "Error", JOptionPane.ERROR_MESSAGE);
             }
 
-            @Override
-            protected void done() {
-                if (success) {
-                    JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
-                            message, "Success", JOptionPane.INFORMATION_MESSAGE);
-                    changeState("RECENTLY_FINISH");
-
-                } else {
-                    JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
-                            message, "Error", JOptionPane.ERROR_MESSAGE);
-                }
-            }
-        }.execute();
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Communication error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            ex.printStackTrace();
+        }
     }
+
 
     private void handleLogout() {
         try {

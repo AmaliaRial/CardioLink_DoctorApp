@@ -30,6 +30,13 @@ public class Patient implements PatientInterface {
     // Constructor vacío
     public Patient() {
     }
+    public Patient(String name, String surname, Date dob,Sex sex, int healthInsuranceNumber) {
+        this.namePatient = name;
+        this.surnamePatient = surname;
+        this.dobPatient = dob;
+        this.sexPatient = sex;
+        this.healthInsuranceNumberPatient = healthInsuranceNumber;
+    }
 
     // Constructor sin id
     public Patient(String name, String surname, String dni, Date dob, String email, Sex sex,
