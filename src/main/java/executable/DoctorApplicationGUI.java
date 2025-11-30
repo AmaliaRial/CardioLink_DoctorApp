@@ -1100,7 +1100,6 @@ public class DoctorApplicationGUI extends JFrame {
     }
 
 
-
         // Panel de visualización de grabaciones
     class ViewRecordingPanel extends JPanel {
         private JTextArea recordingView;
@@ -1163,6 +1162,85 @@ public class DoctorApplicationGUI extends JFrame {
             currentFragmentStates = states;
         }
     }
+
+    // Simple line-plot panel for one signal (ECG or EDA)
+    class SignalPlotPanel extends JPanel {
+
+        private double[] data = new double[0];
+        private final String title;
+
+        public SignalPlotPanel(String title) {
+            this.title = title;
+            setBackground(Color.WHITE);
+        }
+
+        public void setData(double[] data) {
+            this.data = (data == null) ? new double[0] : data;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            if (data == null || data.length < 2) {
+                g.drawString("No data", 10, 20);
+                return;
+            }
+
+            Graphics2D g2 = (Graphics2D) g;
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+
+            int leftPad = 40;
+            int rightPad = 10;
+            int topPad = 20;
+            int bottomPad = 25;
+
+            int plotW = w - leftPad - rightPad;
+            int plotH = h - topPad - bottomPad;
+            if (plotW <= 0 || plotH <= 0) return;
+
+            double min = Arrays.stream(data).min().orElse(0);
+            double max = Arrays.stream(data).max().orElse(1);
+            if (max == min) {
+                max += 1; // avoid division by zero
+            }
+
+            // Draw frame
+            g2.setColor(Color.LIGHT_GRAY);
+            g2.drawRect(leftPad, topPad, plotW, plotH);
+
+            // Title
+            g2.setColor(Color.BLACK);
+            g2.drawString(title, leftPad + 5, topPad - 5);
+
+            // Zero line (if within range)
+            if (min < 0 && max > 0) {
+                int y0 = topPad + (int) ((max / (max - min)) * plotH);
+                g2.setColor(new Color(180, 180, 180));
+                g2.drawLine(leftPad, y0, leftPad + plotW, y0);
+            }
+
+            // Draw signal
+            g2.setColor(Color.BLACK);
+            int n = data.length;
+            double dx = plotW / (double) (n - 1);
+
+            int prevX = leftPad;
+            int prevY = topPad + (int) ((max - data[0]) / (max - min) * plotH);
+
+            for (int i = 1; i < n; i++) {
+                int x = leftPad + (int) (i * dx);
+                int y = topPad + (int) ((max - data[i]) / (max - min) * plotH);
+                g2.drawLine(prevX, prevY, x, y);
+                prevX = x;
+                prevY = y;
+            }
+        }
+    }
+
 
     // Panel de recientemente terminados
     class RecentlyFinishPanel extends JPanel {
@@ -1300,6 +1378,23 @@ public class DoctorApplicationGUI extends JFrame {
 
 
             add(new JScrollPane(diagnosisText), BorderLayout.CENTER);
+
+            // LEFT SIDE – SYMPTOMS box
+            JTextArea symptomsArea = new JTextArea();
+            symptomsArea.setEditable(false);
+            symptomsArea.setLineWrap(true);
+            symptomsArea.setWrapStyleWord(true);
+            JScrollPane symptomsScroll = new JScrollPane(symptomsArea);
+            symptomsScroll.setPreferredSize(new Dimension(300, 200));
+
+            // BUTTON to open recording viewer
+            JButton viewRecordingButton = new JButton("View Recording");
+            viewRecordingButton.addActionListener(e -> handleViewRecording());
+
+            // Add to layout
+            add(symptomsScroll, BorderLayout.WEST);
+            add(viewRecordingButton, BorderLayout.EAST);
+
 
             JPanel buttonPanel = new JPanel(new FlowLayout());
             JButton saveButton = new JButton("Save Diagnosis");
@@ -2086,7 +2181,7 @@ public class DoctorApplicationGUI extends JFrame {
 
 
     private void handleViewRecording() {
-        int diagnosisId = viewDiagnosisFilePanel.getSelectedDiagnosisId();
+        int diagnosisId = currentDiagnosisFileId;
         if (diagnosisId == -1) {
             JOptionPane.showMessageDialog(this, "Please select a diagnosis file", "Warning", JOptionPane.WARNING_MESSAGE);
             return;
@@ -2268,13 +2363,13 @@ public class DoctorApplicationGUI extends JFrame {
     }
 
     private void handleCompleteDiagnosis() {
-        int diagnosisId = recentlyFinishPanel.getSelectedDiagnosisId();
-        if (diagnosisId == -1) {
+        int dfId = recentlyFinishPanel.getSelectedDiagnosisId();
+        if (dfId == -1) {
             JOptionPane.showMessageDialog(this, "Please select a diagnosis to complete", "Warning", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        currentDiagnosisFileId = diagnosisId;
+        currentDiagnosisFileId = dfId;
         completeDiagnosisFilePanel.setDiagnosisText("\n\nObservations:\n\nTreatment Plan:\n\nMedications:\n\nFollow-up:");
         changeState("COMPLETE_DIAGNOSISFILE");
     }
