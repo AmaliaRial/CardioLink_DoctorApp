@@ -15,6 +15,7 @@ import java.awt.event.WindowEvent;
 import java.io.*;
 import java.lang.reflect.Method;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -22,6 +23,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.List;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
+
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
@@ -954,7 +958,7 @@ public class DoctorApplicationGUI extends JFrame {
             JButton backButton = new JButton("Back to Patient");
             backButton.addActionListener(e -> handleBackToViewPatientFromViewDiagnosisFile());
 
-            buttonPanel.add(viewRecordingButton);
+            //buttonPanel.add(viewRecordingButton);
             buttonPanel.add(downloadButton);
             buttonPanel.add(backButton);
 
@@ -1375,7 +1379,8 @@ public class DoctorApplicationGUI extends JFrame {
                         out.writeUTF(currentDiagnosisFileId + "," + selectedFragmentIndex);
                         out.flush();
 
-                        fragmentData = in.readUTF();
+                        //fragmentData = in.readUTF();
+                        fragmentData =receiveCompressedData(in);
                         success = true;
                     } catch (IOException ex) {
                         fragmentData = "Error loading fragment: " + ex.getMessage();
@@ -1615,13 +1620,15 @@ public class DoctorApplicationGUI extends JFrame {
                     try {
 
                         out.writeUTF("DOWNLOAD_RECORDING");
-                        out.writeUTF(String.valueOf(currentDiagnosisFileId));
+                        out.writeInt(currentDiagnosisFileId);
                         out.flush();
 
                         String response = in.readUTF();
                         if ("DOWNLOAD_RECORDING_STARTED".equals(response)) {
-                            String ecgData = in.readUTF();
-                            String edaData = in.readUTF();
+                            //String ecgData = in.readUTF();
+                            String ecgData = receiveCompressedData(in);
+                            //String edaData = in.readUTF();
+                            String edaData = receiveCompressedData(in);
                             String finishResponse = in.readUTF();
 
                             if ("DOWNLOAD_FINISHED".equals(finishResponse)) {
@@ -1650,9 +1657,15 @@ public class DoctorApplicationGUI extends JFrame {
             }.execute();
         }
 
+
+
+
+
         private String createCSVContent(String ecgData, String edaData) {
             StringBuilder csv = new StringBuilder();
-            csv.append("Time(ms),ECG,EDA\n");
+            csv.append("Time(ms);ECG;EDA\n");
+            ecgData= ecgData.substring(1, ecgData.length());
+            edaData= edaData.substring(0, edaData.length()-1);
 
             String[] ecgSamples = ecgData.split(",");
             String[] edaSamples = edaData.split(",");
@@ -1664,7 +1677,7 @@ public class DoctorApplicationGUI extends JFrame {
                 String ecgValue = i < ecgSamples.length ? ecgSamples[i].trim() : "";
                 String edaValue = i < edaSamples.length ? edaSamples[i].trim() : "";
 
-                csv.append(String.format("%.3f,%s,%s\n", timeMs, ecgValue, edaValue));
+                csv.append(String.format("%.3f;%s;%s\n", timeMs, ecgValue, edaValue));
             }
 
             return csv.toString();
@@ -1684,6 +1697,22 @@ public class DoctorApplicationGUI extends JFrame {
                             "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
+        }
+    }
+
+    public String receiveCompressedData(DataInputStream in) throws IOException {
+        String header = in.readUTF();
+        if (!"COMPRESSED_DATA".equals(header)) {
+            throw new IOException("Unexpected header: " + header);
+        }
+
+        int length = in.readInt();
+        byte[] compressed = new byte[length];
+        in.readFully(compressed);
+
+        ByteArrayInputStream bais = new ByteArrayInputStream(compressed);
+        try (GZIPInputStream gzip = new GZIPInputStream(bais)) {
+            return new String(gzip.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 
@@ -2921,7 +2950,10 @@ public class DoctorApplicationGUI extends JFrame {
                     out.writeUTF(diagnosisId + ",1"); // Empezar con el fragmento 0
                     out.flush();
 
-                    recordingData = in.readUTF();
+
+
+                    //recordingData = in.readUTF();
+                    recordingData =receiveCompressedData(in);
                     sequences = in.readUTF();
                     success = true;
                 } catch (IOException ex) {
