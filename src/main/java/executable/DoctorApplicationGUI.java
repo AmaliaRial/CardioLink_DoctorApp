@@ -952,7 +952,7 @@ public class DoctorApplicationGUI extends JFrame {
             downloadButton.addActionListener(e -> handleDownloadDiagnosis());
 
             JButton backButton = new JButton("Back to Patient");
-            backButton.addActionListener(e -> changeState("VIEW_PATIENT"));
+            backButton.addActionListener(e -> handleBackToViewPatientFromViewDiagnosisFile());
 
             buttonPanel.add(viewRecordingButton);
             buttonPanel.add(downloadButton);
@@ -2887,6 +2887,12 @@ public class DoctorApplicationGUI extends JFrame {
 
         DiagnosisFile chosen = currentPatient.getDiagnosisList().get(selectedIndex);
         viewDiagnosisFilePanel.showDiagnosis(chosen, currentPatient);
+        try {
+            out.writeUTF("VIEW_DIAGNOSISFILE");
+            out.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         changeState("VIEW_DIAGNOSISFILE");
     }
 
@@ -2944,36 +2950,98 @@ public class DoctorApplicationGUI extends JFrame {
             return;
         }
 
-        new SwingWorker<Void, Void>() {
+        new SwingWorker<String, Void>() {
             private boolean success = false;
+            private String errorMsg = null;
 
             @Override
-            protected Void doInBackground() {
+            protected String doInBackground() {
                 try {
                     out.writeUTF("DOWNLOAD_DIAGNOSISFILE");
                     out.writeUTF(String.valueOf(diagnosisId));
                     out.flush();
 
                     String response = in.readUTF();
-                    if ("DOWNLOAD_DIAGNOSISFILE_STARTED".equals(response)) {
-                        String diagnosisContent = in.readUTF();
-                        saveToFile("diagnosis_" + diagnosisId + "_" + LocalDate.now() + ".txt", diagnosisContent);
-                        success = true;
+                    if (!"DOWNLOAD_DIAGNOSISFILE_STARTED".equals(response)) {
+                        errorMsg = "Unexpected response from server -->" + response;
+                        return null;
                     }
+
+                    String diagnosisContent = in.readUTF();
+                    List<DiagnosisFile> dfList = parseDiagnosisFileList(diagnosisContent);
+                    if (dfList.isEmpty()) {
+                        errorMsg = "No diagnosis file received from server.";
+                        return null;
+                    }
+                    DiagnosisFile df = dfList.get(0);
+
+                    if (currentPatient == null) {
+                        errorMsg = "No patient loaded in the UI.";
+                        return null;
+                    }
+
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("DIAGNOSIS FILE\n\n");
+                    sb.append("Patient information\n");
+                    sb.append("Name: ").append(Optional.ofNullable(currentPatient.getNamePatient()).orElse("-")).append("\n");
+                    sb.append("Surname: ").append(Optional.ofNullable(currentPatient.getSurnamePatient()).orElse("-")).append("\n");
+                    sb.append("Health Insurance number: ").append(Optional.ofNullable(currentPatient.getHealthInsuranceNumberPatient()).map(Object::toString).orElse("-")).append("\n");
+                    sb.append("Sex: ").append(Optional.ofNullable(currentPatient.getSexPatient()).map(Object::toString).orElse("-")).append("\n");
+                    sb.append("Date of birth: ").append(Optional.ofNullable(currentPatient.getDobPatient()).map(d -> {
+                        try { return d.toString(); } catch (Exception ex) { return d.toString(); }
+                    }).orElse("-")).append("\n\n");
+
+
+                    sb.append("Diagnosis File information\n");
+                    sb.append("Symptoms: ").append(df.getSymptoms() == null ? "-" : df.getSymptoms().toString()).append("\n");
+                    sb.append("Diagnosis: ").append(Optional.ofNullable(df.getDiagnosis()).orElse("-")).append("\n");
+                    sb.append("Medication: ").append(Optional.ofNullable(df.getMedication()).orElse("-")).append("\n");
+                    sb.append("Date: ").append(Optional.ofNullable(df.getDate()).map(Object::toString).orElse("-")).append("\n");
+
+                    success = true;
+                    return sb.toString();
                 } catch (IOException ex) {
-                    // Error ya manejado en saveToFile
+                    errorMsg = "I/O error: " + ex.getMessage();
+                    return null;
+                } catch (Exception ex) {
+                    errorMsg = "Unexpected error: " + ex.getMessage();
+                    return null;
                 }
-                return null;
             }
 
             @Override
             protected void done() {
-                if (success) {
+                try {
+                    String fileContent = get();
+                    if (!success) {
+                        JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
+                                "Error downloading diagnosis: " + (errorMsg == null ? "Unknown error" : errorMsg),
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+
+                    String suggestedName = "diagnosis_" + diagnosisId + "_" + LocalDate.now() + ".txt";
+                    JFileChooser fileChooser = new JFileChooser();
+                    fileChooser.setSelectedFile(new File(suggestedName));
+                    int choice = fileChooser.showSaveDialog(DoctorApplicationGUI.this);
+                    if (choice == JFileChooser.APPROVE_OPTION) {
+                        File outFile = fileChooser.getSelectedFile();
+                        try (BufferedWriter bw = new BufferedWriter(new FileWriter(outFile))) {
+                            bw.write(fileContent);
+                        } catch (IOException ioEx) {
+                            JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
+                                    "Error saving file: " + ioEx.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                            return;
+                        }
+                        JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
+                                "Diagnosis downloaded successfully to:\n" + outFile.getAbsolutePath(),
+                                "Success", JOptionPane.INFORMATION_MESSAGE);
+                        System.out.println("Saved diagnosis file to: " + outFile.getAbsolutePath());
+                    }
+                } catch (Exception ex) {
                     JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
-                            "Diagnosis downloaded successfully", "Success", JOptionPane.INFORMATION_MESSAGE);
-                } else {
-                    JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
-                            "Error downloading diagnosis", "Error", JOptionPane.ERROR_MESSAGE);
+                            "Error while finishing download: " + ex.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
         }.execute();
