@@ -1,10 +1,7 @@
 
 package executable;
 
-import bitalino.BITalino;
-import bitalino.BITalinoException;
-import bitalino.BitalinoManager;
-import bitalino.Frame;
+
 import common.enums.Sex;
 import pojos.DiagnosisFile;
 import pojos.Patient;
