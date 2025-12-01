@@ -1901,6 +1901,7 @@ public class DoctorApplicationGUI extends JFrame {
                         }
                         recentData = sb.toString();
 
+
                     } catch (IOException ex) {
                         recentData = "Error loading recent diagnoses";
                     }
@@ -1915,7 +1916,10 @@ public class DoctorApplicationGUI extends JFrame {
                         String[] diagnoses = recentData.split("MedicalRecord\\{");
                         for (String diagnosis : diagnoses) {
                             if (!diagnosis.trim().isEmpty()) {
-                                recentModel.addElement("MedicalRecord{" + diagnosis.trim());
+                                System.out.println("MedicalRecord{" + diagnosis.trim());
+                                String symptoms= extractSection(diagnosis.trim(), "symptoms='");
+                                String date= extractSection(diagnosis.trim(), "date=");
+                                recentModel.addElement("symptoms="+symptoms+ " | "+"date="+ date);
                             }
                         }
                     } else {
@@ -1925,6 +1929,33 @@ public class DoctorApplicationGUI extends JFrame {
             }.execute();
         }
     }
+    public static String extractSection(String text, String markerBegining) {
+        // 1. Cadena que queremos localizar
+        String marker = markerBegining;
+
+        // 2. Buscar la posición donde empieza " symptoms='"
+        int start = text.indexOf(marker);
+        if (start == -1) {
+            // No se encontró la cadena
+            return null;
+        }
+
+        // 3. Mover el índice justo DESPUÉS de " symptoms='"
+        start += marker.length();
+
+        // 4. Buscar la siguiente comilla simple después de eso
+        int end = text.indexOf("'", start);
+        if (end == -1) {
+            // No se encontró la comilla de cierre
+            return null;
+        }
+
+        // 5. Extraer el contenido entre ambas posiciones
+        String symptoms = text.substring(start, end);
+
+        return symptoms; // Aquí queda por ejemplo: "Trouble sleeping, Fatigue, Palpitations, Anxiety"
+    }
+
 
     // Panel de completar diagnóstico
     public class CompleteDiagnosisFilePanel extends JPanel {
