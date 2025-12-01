@@ -1,10 +1,13 @@
 package executable;
 
 import common.enums.Sex;
+import org.jfree.chart.plot.XYPlot;
+import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import pojos.DiagnosisFile;
 import pojos.Patient;
 
 import javax.swing.*;
+import javax.swing.border.TitledBorder;
 import javax.swing.plaf.basic.BasicButtonUI;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
@@ -19,6 +22,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
 
 public class DoctorApplicationGUI extends JFrame {
 
@@ -66,7 +75,7 @@ public class DoctorApplicationGUI extends JFrame {
     private String currentPatientInfo = null;
     private String currentDiagnosisFiles = null;
     private String currentRecordingData = null;
-    private String currentFragmentStates = null;
+    private String currentSequences = null;
     private int currentDiagnosisFileId = -1;
 
     public DoctorApplicationGUI() {
@@ -1117,66 +1126,564 @@ public class DoctorApplicationGUI extends JFrame {
     }
 
 
-        // Panel de visualización de grabaciones
+
+
+
     class ViewRecordingPanel extends JPanel {
-        private JTextArea recordingView;
-        private JLabel stateLabel;
-        private int currentFragmentIndex = 0;
+        private JList<String> fragmentList;
+        private DefaultListModel<String> listModel;
+        private JPanel graphPanel;
+        private JLabel durationLabel;
+        private JLabel sectionLabel;
+        private JLabel samplingLabel;
         private int currentDiagnosisFileId = -1;
+        private String currentSequences;
+        private int selectedFragmentIndex = 0;
+        private static final int SAMPLING_RATE = 1000;
+        private static final int FRAGMENT_DURATION = 10;
+
+        // Chart panels for real-time plotting
+        private ChartPanel ecgChartPanel;
+        private ChartPanel edaChartPanel;
+        private JFreeChart ecgChart;
+        private JFreeChart edaChart;
 
         public ViewRecordingPanel() {
             setLayout(new BorderLayout());
             setBackground(new Color(171, 191, 234));
             setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-            JLabel label = new JLabel("Recording Viewer", JLabel.CENTER);
-            label.setFont(label.getFont().deriveFont(Font.BOLD, 22f));
-            add(label, BorderLayout.NORTH);
+            JLabel title = new JLabel("Recording Viewer", JLabel.CENTER);
+            title.setFont(title.getFont().deriveFont(Font.BOLD, 22f));
+            add(title, BorderLayout.NORTH);
 
-            recordingView = new JTextArea();
-            recordingView.setEditable(false);
-            recordingView.setBackground(new Color(200, 220, 240));
-            recordingView.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            // Main content panel with left and right sections - 1:2 ratio
+            JPanel contentPanel = new JPanel(new GridBagLayout());
+            contentPanel.setBackground(new Color(171, 191, 234));
+            contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-            stateLabel = new JLabel("Fragment states: ");
-            stateLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.fill = GridBagConstraints.BOTH;
+            gbc.insets = new Insets(5, 5, 5, 5);
 
-            JPanel centerPanel = new JPanel(new BorderLayout());
-            centerPanel.add(new JScrollPane(recordingView), BorderLayout.CENTER);
-            centerPanel.add(stateLabel, BorderLayout.SOUTH);
+            // Left panel - Fragment list (1/3 of width)
+            JPanel leftPanel = new JPanel(new BorderLayout());
+            leftPanel.setBackground(Color.WHITE);
+            leftPanel.setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(Color.GRAY), "TimeTable In Fragments of 10sec"));
 
-            add(centerPanel, BorderLayout.CENTER);
+            listModel = new DefaultListModel<>();
+            fragmentList = new JList<>(listModel);
+            fragmentList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            fragmentList.setFont(new Font("Monospaced", Font.PLAIN, 12));
+            fragmentList.addListSelectionListener(e -> {
+                if (!e.getValueIsAdjusting()) {
+                    int selectedIndex = fragmentList.getSelectedIndex();
+                    if (selectedIndex != -1 && selectedIndex != selectedFragmentIndex) {
+                        selectedFragmentIndex = selectedIndex;
+                        loadSelectedFragment();
+                    }
+                }
+            });
 
+            JScrollPane listScrollPane = new JScrollPane(fragmentList);
+            listScrollPane.setPreferredSize(new Dimension(200, 0));
+            leftPanel.add(listScrollPane, BorderLayout.CENTER);
+
+            // Info panel with duration, section, and sampling rate
+            JPanel infoPanel = new JPanel(new GridLayout(3, 1));
+            infoPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            durationLabel = new JLabel("Complete Recording Duration: 0sec");
+            sectionLabel = new JLabel("Section Selected: sec0-sec0");
+            samplingLabel = new JLabel("Sampling Rate: 1000 Hz");
+            infoPanel.add(durationLabel);
+            infoPanel.add(sectionLabel);
+            infoPanel.add(samplingLabel);
+            leftPanel.add(infoPanel, BorderLayout.SOUTH);
+
+            // Right panel - Graphs (2/3 of width)
+            JPanel rightPanel = new JPanel(new BorderLayout());
+            rightPanel.setBackground(Color.WHITE);
+            rightPanel.setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(Color.GRAY), "Signal Graphs"));
+
+            // Initialize charts
+            initializeCharts();
+
+            graphPanel = new JPanel(new GridLayout(2, 1, 0, 10));
+            graphPanel.setBackground(Color.WHITE);
+            graphPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+            // Add chart panels
+            graphPanel.add(createChartPanel(ecgChartPanel, "ECG Signal"));
+            graphPanel.add(createChartPanel(edaChartPanel, "EDA Signal"));
+
+            rightPanel.add(graphPanel, BorderLayout.CENTER);
+
+            // Add panels to content with proper weights (1:2 ratio)
+            gbc.gridx = 0;
+            gbc.gridy = 0;
+            gbc.weightx = 0.3;
+            gbc.weighty = 1.0;
+            contentPanel.add(leftPanel, gbc);
+
+            gbc.gridx = 1;
+            gbc.weightx = 0.7;
+            contentPanel.add(rightPanel, gbc);
+
+            add(contentPanel, BorderLayout.CENTER);
+
+            // Bottom buttons
             JPanel buttonPanel = new JPanel(new FlowLayout());
-            JButton prevFragmentButton = new JButton("Previous Fragment");
-            prevFragmentButton.addActionListener(e -> handleChangeFragment(-1));
 
-            JButton nextFragmentButton = new JButton("Next Fragment");
-            nextFragmentButton.addActionListener(e -> handleChangeFragment(1));
+            JButton backButton = new JButton("Back to Complete Diagnosis File");
+            backButton.addActionListener(e -> handleBackToDiagnosis());
 
             JButton downloadButton = new JButton("Download Recording");
+            downloadButton.setBackground(new Color(46, 204, 113));
+            downloadButton.setForeground(Color.WHITE);
+            downloadButton.setOpaque(true);
+            downloadButton.setBorderPainted(false);
+            downloadButton.setFocusPainted(false);
             downloadButton.addActionListener(e -> handleDownloadRecording());
 
-            JButton backButton = new JButton("Back to Diagnosis");
-            backButton.addActionListener(e -> handleBackToViewPatientFromViewDiagnosisFile());
-
-            buttonPanel.add(prevFragmentButton);
-            buttonPanel.add(nextFragmentButton);
-            buttonPanel.add(downloadButton);
             buttonPanel.add(backButton);
+            buttonPanel.add(downloadButton);
             add(buttonPanel, BorderLayout.SOUTH);
         }
 
-        public void setRecordingData(String data, String states, int diagnosisFileId) {
-            recordingView.setText(data);
-            stateLabel.setText("Fragment states: " + states + " | Current fragment: " + currentFragmentIndex);
-            currentDiagnosisFileId = diagnosisFileId;
-            currentFragmentStates = states;
+        private void initializeCharts() {
+            // Create empty datasets
+            XYSeriesCollection ecgDataset = new XYSeriesCollection();
+            XYSeriesCollection edaDataset = new XYSeriesCollection();
+
+            // Create ECG chart WITHOUT title
+            ecgChart = ChartFactory.createXYLineChart(
+                    null, // NO TITLE
+                    "Time (seconds)",
+                    "Amplitude",
+                    ecgDataset,
+                    PlotOrientation.VERTICAL,
+                    false, // no legend
+                    true,
+                    false
+            );
+
+            // Create EDA chart WITHOUT title
+            edaChart = ChartFactory.createXYLineChart(
+                    null, // NO TITLE
+                    "Time (seconds)",
+                    "Amplitude",
+                    edaDataset,
+                    PlotOrientation.VERTICAL,
+                    false, // no legend
+                    true,
+                    false
+            );
+
+            // Customize charts appearance
+            customizeChart(ecgChart, new Color(0, 112, 192)); // Blue for ECG
+            customizeChart(edaChart, new Color(192, 0, 0));   // Red for EDA
+
+            ecgChartPanel = new ChartPanel(ecgChart);
+            edaChartPanel = new ChartPanel(edaChart);
+
+            // Set preferred sizes for charts
+            ecgChartPanel.setPreferredSize(new Dimension(600, 250));
+            edaChartPanel.setPreferredSize(new Dimension(600, 250));
         }
 
-        public void setFragmentStates(String states) {
-            stateLabel.setText("Fragment states: " + states + " | Current fragment: " + currentFragmentIndex);
-            currentFragmentStates = states;
+        private void customizeChart(JFreeChart chart, Color color) {
+            XYPlot plot = chart.getXYPlot();
+
+            // Set line color and thickness
+            XYLineAndShapeRenderer renderer = new XYLineAndShapeRenderer();
+            renderer.setSeriesPaint(0, color);
+            renderer.setSeriesStroke(0, new BasicStroke(1.5f));
+            renderer.setSeriesShapesVisible(0, false); // No data points, just line
+
+            plot.setRenderer(renderer);
+            plot.setBackgroundPaint(Color.WHITE);
+            plot.setDomainGridlinePaint(Color.LIGHT_GRAY);
+            plot.setRangeGridlinePaint(Color.LIGHT_GRAY);
+
+            // Set auto range but with some padding
+            plot.getDomainAxis().setAutoRange(true);
+            plot.getRangeAxis().setAutoRange(true);
+
+            // Remove chart background
+            chart.setBackgroundPaint(Color.WHITE);
+        }
+
+        private JPanel createChartPanel(ChartPanel chartPanel, String title) {
+            JPanel panel = new JPanel(new BorderLayout());
+            panel.setBackground(Color.WHITE);
+            panel.setBorder(BorderFactory.createTitledBorder(title));
+            panel.add(chartPanel, BorderLayout.CENTER);
+            return panel;
+        }
+
+        public void setRecordingData(String data, String sequences, int diagnosisFileId) {
+            this.currentDiagnosisFileId = diagnosisFileId;
+            this.currentSequences = sequences;
+
+            // Parse sequences and populate list
+            String[] sequenceArray = sequences.split(",");
+            listModel.clear();
+            for (String seq : sequenceArray) {
+                listModel.addElement("Fragment: " + seq);
+            }
+
+            // Calculate total duration
+            int totalDuration = calculateTotalDuration(sequenceArray.length);
+            durationLabel.setText("Complete Recording Duration: " + totalDuration + "sec");
+
+            // Store the current fragment data and update graphs
+            updateGraphsWithRealData(data);
+
+            // Select first fragment by default
+            if (listModel.size() > 0) {
+                fragmentList.setSelectedIndex(0);
+                selectedFragmentIndex = 0;
+                updateSectionLabel(0, data);
+            }
+        }
+
+        private int calculateTotalDuration(int fragmentCount) {
+            if (fragmentCount == 0) return 0;
+
+            // All fragments except the last are exactly 10 seconds
+            // The last fragment duration will be calculated when loaded
+            int totalDuration = (fragmentCount - 1) * FRAGMENT_DURATION;
+            totalDuration += FRAGMENT_DURATION; // Will be updated when last fragment is loaded
+
+            return totalDuration;
+        }
+
+        private void loadSelectedFragment() {
+            if (currentDiagnosisFileId == -1) return;
+
+            new SwingWorker<Void, Void>() {
+                private String fragmentData = null;
+                private boolean success = false;
+
+                @Override
+                protected Void doInBackground() {
+                    try {
+
+                        out.writeUTF("CHANGE_FRAGMENT");
+                        out.writeUTF(currentDiagnosisFileId + "," + selectedFragmentIndex);
+                        out.flush();
+
+                        fragmentData = in.readUTF();
+                        success = true;
+                    } catch (IOException ex) {
+                        fragmentData = "Error loading fragment: " + ex.getMessage();
+                    }
+                    return null;
+                }
+
+                @Override
+                protected void done() {
+                    if (success) {
+                        updateGraphsWithRealData(fragmentData);
+                        updateSectionLabel(selectedFragmentIndex, fragmentData);
+
+                        // Update total duration if this is the last fragment and has different duration
+                        if (selectedFragmentIndex == listModel.size() - 1) {
+                            updateTotalDuration(fragmentData);
+                        }
+                    } else {
+                        JOptionPane.showMessageDialog(ViewRecordingPanel.this,
+                                fragmentData, "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            }.execute();
+        }
+
+        private void updateGraphsWithRealData(String fragmentData) {
+            // Parse fragment data: "ecg1,ecg2,...;eda1,eda2,..."
+            String[] signals = fragmentData.split(";");
+            if (signals.length == 2) {
+                String ecgData = signals[0].trim();
+                String edaData = signals[1].trim();
+
+                // Parse ECG data and create chart
+                double[] ecgValues = parseSignalData(ecgData);
+                double[] edaValues = parseSignalData(edaData);
+
+                // Calculate actual duration based on sample count
+                double actualDuration = (double) ecgValues.length / SAMPLING_RATE;
+
+                // Update charts with specialized Y-axis adjustment
+                updateChartWithSpecificYAxis(ecgChart, ecgValues, actualDuration, "ECG");
+                updateChartWithSpecificYAxis(edaChart, edaValues, actualDuration, "EDA");
+
+                // Update panel titles with correct information
+                updateGraphTitles(ecgValues.length, edaValues.length, actualDuration);
+            }
+        }
+
+        private double[] parseSignalData(String data) {
+            String[] samples = data.split(",");
+            double[] values = new double[samples.length];
+            for (int i = 0; i < samples.length; i++) {
+                try {
+                    values[i] = Double.parseDouble(samples[i].trim());
+                } catch (NumberFormatException e) {
+                    values[i] = 0.0;
+                }
+            }
+            return values;
+        }
+
+        private void updateChartWithSpecificYAxis(JFreeChart chart, double[] values, double duration, String signalType) {
+            XYSeries series = new XYSeries("Signal");
+
+            // Add data points (time in seconds, amplitude)
+            for (int i = 0; i < values.length; i++) {
+                double time = (double) i / SAMPLING_RATE;
+                series.add(time, values[i]);
+            }
+
+            XYSeriesCollection dataset = new XYSeriesCollection();
+            dataset.addSeries(series);
+
+            chart.getXYPlot().setDataset(dataset);
+
+            // Use signal-specific Y-axis adjustment
+            if ("ECG".equals(signalType)) {
+                autoAdjustYAxisForECG(chart, values);
+            } else {
+                autoAdjustYAxisForEDA(chart, values);
+            }
+        }
+
+        // Método especializado para señales ECG
+        private void autoAdjustYAxisForECG(JFreeChart chart, double[] values) {
+            if (values.length == 0) return;
+
+            double min = values[0];
+            double max = values[0];
+            for (double value : values) {
+                if (value < min) min = value;
+                if (value > max) max = value;
+            }
+
+            double range = max - min;
+
+            // ECG-specific adjustment
+            if (range == 0) {
+                chart.getXYPlot().getRangeAxis().setRange(min - 50, max + 50);
+            } else {
+                // For ECG, we want to see the entire waveform clearly
+                // Use smaller padding to avoid too much empty space
+                double padding = range * 0.1; // 10% padding
+
+                // But ensure minimum visible range for ECG
+                double minRange = 100; // Minimum range of 100 units for ECG
+                if (range + 2 * padding < minRange) {
+                    double center = (min + max) / 2;
+                    min = center - minRange / 2;
+                    max = center + minRange / 2;
+                } else {
+                    min -= padding;
+                    max += padding;
+                }
+
+                chart.getXYPlot().getRangeAxis().setRange(min, max);
+            }
+        }
+
+        // Método especializado para señales EDA
+        private void autoAdjustYAxisForEDA(JFreeChart chart, double[] values) {
+            if (values.length == 0) return;
+
+            double min = values[0];
+            double max = values[0];
+            for (double value : values) {
+                if (value < min) min = value;
+                if (value > max) max = value;
+            }
+
+            double range = max - min;
+
+            // EDA-specific adjustment
+            if (range == 0) {
+                chart.getXYPlot().getRangeAxis().setRange(min - 0.5, max + 0.5);
+            } else {
+                // For EDA, use more padding to see small variations
+                double padding = range * 0.3; // 30% padding for EDA
+
+                // But ensure minimum visible range for EDA
+                double minRange = 0.5; // Minimum range of 0.5 units for EDA
+                if (range + 2 * padding < minRange) {
+                    double center = (min + max) / 2;
+                    min = center - minRange / 2;
+                    max = center + minRange / 2;
+                } else {
+                    min -= padding;
+                    max += padding;
+                }
+
+                chart.getXYPlot().getRangeAxis().setRange(min, max);
+            }
+        }
+
+        private void updateGraphTitles(int ecgSamples, int edaSamples, double duration) {
+            // Update the border titles of the graph panels
+            Component[] components = graphPanel.getComponents();
+            if (components.length >= 2) {
+                for (int i = 0; i < 2; i++) {
+                    if (components[i] instanceof JPanel) {
+                        JPanel panel = (JPanel) components[i];
+                        if (panel.getBorder() instanceof TitledBorder) {
+                            TitledBorder border = (TitledBorder) panel.getBorder();
+                            if (i == 0) {
+                                border.setTitle("ECG Signal (" + ecgSamples +
+                                        " samples, " + String.format("%.2f", duration) + "s)");
+                            } else {
+                                border.setTitle("EDA Signal (" + edaSamples +
+                                        " samples, " + String.format("%.2f", duration) + "s)");
+                            }
+                            panel.repaint();
+                        }
+                    }
+                }
+            }
+        }
+
+        private void updateSectionLabel(int fragmentIndex, String fragmentData) {
+            int startSec = fragmentIndex * FRAGMENT_DURATION;
+
+            // Calculate actual duration of this fragment
+            String[] signals = fragmentData.split(";");
+            double fragmentDuration = FRAGMENT_DURATION;
+
+            if (signals.length == 2) {
+                String ecgData = signals[0].trim();
+                String[] ecgSamples = ecgData.split(",");
+                fragmentDuration = (double) ecgSamples.length / SAMPLING_RATE;
+            }
+
+            double endSec = startSec + fragmentDuration;
+
+            if (fragmentIndex == listModel.size() - 1) {
+                // Last fragment - show exact end time
+                sectionLabel.setText(String.format("Section Selected: sec%d-sec%.1f", startSec, endSec));
+            } else {
+                sectionLabel.setText(String.format("Section Selected: sec%d-sec%d", startSec, (int)endSec));
+            }
+        }
+
+        private void updateTotalDuration(String lastFragmentData) {
+            // Recalculate total duration with actual last fragment duration
+            String[] signals = lastFragmentData.split(";");
+            if (signals.length == 2) {
+                String ecgData = signals[0].trim();
+                String[] ecgSamples = ecgData.split(",");
+                double lastFragmentDuration = (double) ecgSamples.length / SAMPLING_RATE;
+
+                int totalDuration = (listModel.size() - 1) * FRAGMENT_DURATION + (int)Math.ceil(lastFragmentDuration);
+                durationLabel.setText("Complete Recording Duration: " + totalDuration + "sec");
+            }
+        }
+
+        private void handleBackToDiagnosis() {
+            try {
+                out.writeUTF("BACK_TO_DIAGNOSIS_TO_COMPLETE");   // server: COMPLETE_DIAGNOSISFILE -> RECENTLY_FINISH
+                out.flush();
+                handleCompleteDiagnosis();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            changeState("COMPLETE_DIAGNOSISFILE_PANEL");
+
+        }
+
+        private void handleDownloadRecording() {
+            if (currentDiagnosisFileId == -1) {
+                JOptionPane.showMessageDialog(this, "No recording loaded", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            new SwingWorker<Void, Void>() {
+                private boolean success = false;
+
+                @Override
+                protected Void doInBackground() {
+                    try {
+
+                        out.writeUTF("DOWNLOAD_RECORDING");
+                        out.writeUTF(String.valueOf(currentDiagnosisFileId));
+                        out.flush();
+
+                        String response = in.readUTF();
+                        if ("DOWNLOAD_RECORDING_STARTED".equals(response)) {
+                            String ecgData = in.readUTF();
+                            String edaData = in.readUTF();
+                            String finishResponse = in.readUTF();
+
+                            if ("DOWNLOAD_FINISHED".equals(finishResponse)) {
+                                String csvContent = createCSVContent(ecgData, edaData);
+                                saveToFile("recording_" + currentDiagnosisFileId + "_" +
+                                        java.time.LocalDate.now() + ".csv", csvContent);
+                                success = true;
+                            }
+                        }
+                    } catch (IOException ex) {
+                        ex.printStackTrace();
+                    }
+                    return null;
+                }
+
+                @Override
+                protected void done() {
+                    if (success) {
+                        JOptionPane.showMessageDialog(ViewRecordingPanel.this,
+                                "Recording downloaded successfully", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        JOptionPane.showMessageDialog(ViewRecordingPanel.this,
+                                "Error downloading recording", "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            }.execute();
+        }
+
+        private String createCSVContent(String ecgData, String edaData) {
+            StringBuilder csv = new StringBuilder();
+            csv.append("Time(ms),ECG,EDA\n");
+
+            String[] ecgSamples = ecgData.split(",");
+            String[] edaSamples = edaData.split(",");
+
+            int maxSamples = Math.max(ecgSamples.length, edaSamples.length);
+
+            for (int i = 0; i < maxSamples; i++) {
+                double timeMs = (double) i * (1000.0 / SAMPLING_RATE);
+                String ecgValue = i < ecgSamples.length ? ecgSamples[i].trim() : "";
+                String edaValue = i < edaSamples.length ? edaSamples[i].trim() : "";
+
+                csv.append(String.format("%.3f,%s,%s\n", timeMs, ecgValue, edaValue));
+            }
+
+            return csv.toString();
+        }
+
+
+        private void saveToFile(String fileName, String content) {
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setSelectedFile(new File(fileName));
+
+            if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                File file = fileChooser.getSelectedFile();
+                try (PrintWriter writer = new PrintWriter(file)) {
+                    writer.write(content);
+                } catch (FileNotFoundException ex) {
+                    JOptionPane.showMessageDialog(this, "Error saving file: " + ex.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
         }
     }
 
@@ -1554,11 +2061,11 @@ public class DoctorApplicationGUI extends JFrame {
             saveButton.addActionListener(e -> handleSaveDiagnosis());
 
             JButton backButton = new JButton("Back");
-            backButton.addActionListener(e -> changeState("RECENTLY_FINISH"));
+            backButton.addActionListener(e -> handleBackToRecentlyFinishFromComplete());
 
             buttonPanel.add(showRecordingButton);
             buttonPanel.add(saveButton);
-            buttonPanel.add(backButton);
+            //buttonPanel.add(backButton);
 
             add(buttonPanel, BorderLayout.SOUTH);
         }
@@ -2344,12 +2851,12 @@ public class DoctorApplicationGUI extends JFrame {
     // Back from COMPLETE_DIAGNOSISFILE to RECENTLY_FINISH
     private void handleBackToRecentlyFinishFromComplete() {
         try {
-            out.writeUTF("BACK_TO_MENU");   // server: COMPLETE_DIAGNOSISFILE -> RECENTLY_FINISH
+            out.writeUTF("BACK_TO_DIAGNOSISTODO");   // server: COMPLETE_DIAGNOSISFILE -> RECENTLY_FINISH
             out.flush();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        changeState("DOCTOR_MENU");
+        changeState("RECENTLY_FINISH");
     }
 
     private void handleBackToViewPatientFromViewDiagnosisFile() {
@@ -2361,6 +2868,7 @@ public class DoctorApplicationGUI extends JFrame {
         }
         changeState("VIEW_PATIENT");
     }
+
 
     private void handleViewDiagnosisFile() {
         if (currentPatient == null) {
@@ -2392,18 +2900,20 @@ public class DoctorApplicationGUI extends JFrame {
 
         new SwingWorker<Void, Void>() {
             private String recordingData = null;
-            private String fragmentStates = null;
+            private String sequences = null;
             private boolean success = false;
 
             @Override
             protected Void doInBackground() {
                 try {
                     out.writeUTF("VIEW_RECORDING");
-                    out.writeUTF(diagnosisId + ",0"); // Empezar con el fragmento 0
+                    out.writeUTF("VIEW_RECORDING");
+                    out.writeUTF("VIEW_RECORDING");
+                    out.writeUTF(diagnosisId + ",1"); // Empezar con el fragmento 0
                     out.flush();
 
                     recordingData = in.readUTF();
-                    fragmentStates = in.readUTF();
+                    sequences = in.readUTF();
                     success = true;
                 } catch (IOException ex) {
                     recordingData = "Error loading recording: " + ex.getMessage();
@@ -2414,9 +2924,9 @@ public class DoctorApplicationGUI extends JFrame {
             @Override
             protected void done() {
                 if (success) {
-                    viewRecordingPanel.setRecordingData(recordingData, fragmentStates, diagnosisId);
+                    viewRecordingPanel.setRecordingData(recordingData, sequences, diagnosisId);
                     currentRecordingData = recordingData;
-                    currentFragmentStates = fragmentStates;
+                    currentSequences = sequences;
                     changeState("VIEW_RECORDING");
                 } else {
                     JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
@@ -2426,49 +2936,6 @@ public class DoctorApplicationGUI extends JFrame {
         }.execute();
     }
 
-    private void handleChangeFragment(int direction) {
-        if (currentDiagnosisFileId == -1) {
-            JOptionPane.showMessageDialog(this, "No recording loaded", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        new SwingWorker<Void, Void>() {
-            private String fragmentData = null;
-            private boolean success = false;
-
-            @Override
-            protected Void doInBackground() {
-                try {
-                    // Calcular nuevo índice
-                    viewRecordingPanel.currentFragmentIndex += direction;
-                    if (viewRecordingPanel.currentFragmentIndex < 0) {
-                        viewRecordingPanel.currentFragmentIndex = 0;
-                    }
-
-                    out.writeUTF("CHANGE_FRAGMENT");
-                    out.writeUTF(currentDiagnosisFileId + "," + viewRecordingPanel.currentFragmentIndex);
-                    out.flush();
-
-                    fragmentData = in.readUTF();
-                    success = true;
-                } catch (IOException ex) {
-                    fragmentData = "Error changing fragment: " + ex.getMessage();
-                    viewRecordingPanel.currentFragmentIndex -= direction; // Revertir cambio
-                }
-                return null;
-            }
-
-            @Override
-            protected void done() {
-                if (success) {
-                    viewRecordingPanel.setRecordingData(fragmentData, currentFragmentStates, currentDiagnosisFileId);
-                } else {
-                    JOptionPane.showMessageDialog(DoctorApplicationGUI.this,
-                            fragmentData, "Error", JOptionPane.ERROR_MESSAGE);
-                }
-            }
-        }.execute();
-    }
 
     private void handleDownloadDiagnosis() {
         int diagnosisId = viewDiagnosisFilePanel.getSelectedDiagnosisId();
@@ -2632,9 +3099,11 @@ public class DoctorApplicationGUI extends JFrame {
 
             // Recibir confirmación
             String response = in.readUTF();
+            System.out.println(response);
+
             if ("COMPLETE_DIAGNOSISFILE_SAVED".equals(response)) {
                 JOptionPane.showMessageDialog(this, "Diagnosis saved successfully", "Success", JOptionPane.INFORMATION_MESSAGE);
-                changeState("RECENTLY_FINISH");
+                handleBackToRecentlyFinishFromComplete();
             } else {
                 JOptionPane.showMessageDialog(this, "Error saving diagnosis", "Error", JOptionPane.ERROR_MESSAGE);
             }
